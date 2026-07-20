@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Up — WiFiGuard AI</title>
+<meta name="description" content="Create your WiFiGuard AI account to view live network trust scores and threat detection.">
+<meta name="theme-color" content="#090D18">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%233B82F6'/%3E%3Cstop offset='100%25' stop-color='%2322C55E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z' fill='url(%23g)'/%3E%3Cpath d='m9 12 2 2 4-4' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:            #090D18;
+  --bg-alt:        #0D1424;
+  --panel:         #121B2E;
+  --panel-2:       #16213A;
+  --glass:         rgba(46, 18, 36, 0.62);
+  --glass-strong:  rgba(22, 33, 58, 0.82);
+  --border:        rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.26);
+  --blue:        #3B82F6;
+  --blue-bright: #63A4FF;
+  --cyan:        #22D3EE;
+  --green:       #22C55E;
+  --green-bright:#4ADE80;
+  --red:         #F87171;
+  --amber:       #FBBF24;
+  --text:        #E9EEF7;
+  --text-muted:  #8C97AE;
+  --text-dim:    #5E6A82;
+  --white:       #FFFFFF;
+  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body:    'Inter', 'Segoe UI', sans-serif;
+  --font-mono:    'JetBrains Mono', 'Consolas', monospace;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --shadow-card: 0 10px 30px -12px rgba(0,0,0,0.55);
+}
+*{ box-sizing: border-box; }
+html{ scroll-behavior: smooth; }
+body{
+  margin:0;
+  background: radial-gradient(120% 120% at 15% -10%, #101B33 0%, var(--bg) 45%, #060910 100%);
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.55;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+h1,h2,h3,h4,.display{ font-family: var(--font-display); letter-spacing: -0.02em; color: var(--white); margin: 0; }
+p{ color: var(--text-muted); margin: 0; }
+a{ color: inherit; text-decoration: none; }
+::selection{ background: rgba(59,130,246,0.35); color: #fff; }
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+a:focus-visible, button:focus-visible, input:focus-visible{
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+.grid-field{
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(148,163,184,0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148,163,184,0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, #000 40%, transparent 100%);
+  pointer-events: none;
+}
+.btn{
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--font-body); font-weight: 600; font-size: 0.95rem;
+  padding: 13px 26px; border-radius: 12px; border: 1px solid transparent;
+  cursor: pointer; transition: transform .18s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+  white-space: nowrap;
+}
+.btn:active{ transform: translateY(1px) scale(0.99); }
+.btn-primary{
+  background: linear-gradient(135deg, var(--blue) 0%, #2563EB 100%);
+  color: #fff;
+  box-shadow: 0 8px 24px -8px rgba(59,130,246,0.6);
+}
+.btn-primary:hover{ box-shadow: 0 10px 30px -6px rgba(59,130,246,0.75); transform: translateY(-1px); }
+.btn-block{ width: 100%; }
+.btn[disabled]{ opacity: 0.65; cursor: not-allowed; }
+
+.auth-back{
+  display:inline-flex; align-items:center; gap:6px;
+  font-size: 0.82rem; color: var(--text-muted); font-weight: 600;
+  position: absolute; top: 26px; left: 26px;
+}
+.auth-back:hover{ color: var(--cyan); }
+.auth-back svg{ width:14px; height:14px; }
+
+.auth-shell{
+  min-height: 100vh; display:flex; align-items:center; justify-content:center;
+  padding: 40px 20px; position: relative; overflow:hidden;
+}
+.auth-card{
+  width: 100%; max-width: 420px; position: relative; z-index: 2;
+  background: var(--glass-strong); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg); padding: 40px 36px;
+  backdrop-filter: blur(20px); box-shadow: 0 25px 60px -20px rgba(0,0,0,0.7);
+}
+.auth-logo{ display:flex; flex-direction:column; align-items:center; gap: 14px; margin-bottom: 26px; }
+.brand-mark{
+  width: 52px; height: 52px; border-radius: 9px;
+  background: conic-gradient(from 210deg, var(--blue), var(--cyan), var(--green), var(--blue));
+  display:flex; align-items:center; justify-content:center; position: relative;
+}
+.brand-mark::after{ content:""; position:absolute; inset: 3px; border-radius: 6px; background: var(--bg); }
+.brand-mark svg{ position: relative; z-index: 1; }
+
+.auth-head{ text-align:center; margin-bottom: 28px; }
+.auth-head h2{ font-size: 1.5rem; margin-bottom: 6px; }
+.auth-head p{ font-size: 0.9rem; }
+
+.role-select{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
+.role-option{
+  display:flex; flex-direction:column; align-items:center; gap: 8px;
+  padding: 16px 10px; border-radius: 12px; border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.02); cursor:pointer; transition: all .18s ease;
+}
+.role-option input{ display:none; }
+.role-option svg{ width: 20px; height: 20px; color: var(--text-muted); transition: color .18s; }
+.role-option span{ font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.role-option.active{
+  border-color: var(--cyan); background: rgba(34,211,238,0.08);
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.12);
+}
+.role-option.active svg, .role-option.active span{ color: var(--cyan); }
+
+.form-field{ margin-bottom: 18px; }
+.form-field label{ display:block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 7px; font-weight:600; }
+.input-icon-wrap{ position:relative; }
+.input-icon-wrap svg{ position:absolute; left:14px; top:50%; transform:translateY(-50%); width:16px; height:16px; color: var(--text-dim); }
+.input-icon-wrap input{ padding-left: 40px; }
+.form-field input{
+  width:100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 12px 14px; color: var(--text); font-family: var(--font-body); font-size: 0.92rem;
+}
+.form-field input:focus{ border-color: var(--cyan); outline:none; }
+.pw-toggle{ position:absolute; right:12px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-dim); cursor:pointer; padding:4px; }
+
+.field-hint{ font-size: 0.72rem; color: var(--text-dim); margin-top: 6px; }
+.field-hint.err{ color: var(--red); }
+.field-hint.ok{ color: var(--green-bright); }
+
+.terms-row{ display:flex; align-items:flex-start; gap: 10px; margin: 6px 0 22px; font-size: 0.82rem; color: var(--text-muted); }
+.terms-row input{ accent-color: var(--cyan); width:14px; height:14px; margin-top: 3px; flex-shrink:0; }
+.terms-row a{ color: var(--blue-bright); font-weight: 600; }
+.terms-row a:hover{ color: var(--cyan); }
+
+.auth-error{
+  display:none; align-items:center; gap:8px; font-size: 0.82rem; color: var(--red);
+  background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3);
+  padding: 10px 12px; border-radius: 10px; margin-bottom: 18px;
+}
+.auth-error.show{ display:flex; }
+.auth-error svg{ width:15px; height:15px; flex-shrink:0; }
+
+.auth-divider{ display:flex; align-items:center; gap:12px; margin: 22px 0; color: var(--text-dim); font-size: 0.75rem; }
+.auth-divider::before, .auth-divider::after{ content:""; flex:1; height:1px; background: var(--border); }
+
+.auth-footer{ text-align:center; margin-top: 20px; font-size: 0.85rem; color: var(--text-muted); }
+.auth-footer a{ color: var(--cyan); font-weight: 600; }
+
+.spinner{
+  width: 17px; height: 17px; border-radius: 50%;
+  border: 2.5px solid rgba(255,255,255,0.35); border-top-color: #fff;
+  animation: spin 0.7s linear infinite; display:none;
+}
+@keyframes spin{ to{ transform: rotate(360deg); } }
+.btn.loading .spinner{ display:inline-block; }
+.btn.loading .btn-label{ opacity: 0.85; }
+
+.redirect-overlay{
+  position: fixed; inset:0; z-index: 999; background: var(--bg);
+  display:flex; align-items:center; justify-content:center; flex-direction:column; gap: 22px;
+  opacity:0; pointer-events:none; transition: opacity .35s ease;
+}
+.redirect-overlay.show{ opacity:1; pointer-events:all; }
+.redirect-ring{ width: 64px; height: 64px; position:relative; }
+.redirect-ring svg{ width:100%; height:100%; animation: spin 1.4s linear infinite; }
+.redirect-ring circle{ fill:none; stroke-width:5; stroke-linecap:round; }
+.redirect-text{ font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted); letter-spacing: .03em; }
+.redirect-text b{ color: var(--cyan); }
+</style>
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="grid-field"></div>
+
+  <div class="auth-card">
+    <a href="home.html" class="auth-back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Home
+    </a>
+    <div class="auth-logo">
+      <span class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" width="26" height="26"><path d="M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z"/><path d="m9 12 2 2 4-4"/></svg>
+      </span>
+    </div>
+
+    <div class="auth-head">
+      <h2>Create Your Account</h2>
+      <p>Get started with WiFiGuard AI in seconds</p>
+    </div>
+
+    <div id="authError" class="auth-error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+      <span id="authErrorText">Please check the fields below and try again.</span>
+    </div>
+
+    <form id="signupForm">
+      <!-- Role Selection -->
+      <div class="role-select" role="radiogroup" aria-label="Select role">
+        <label class="role-option active" id="roleUserOpt">
+          <input type="radio" name="role" value="user" checked>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          <span>User</span>
+        </label>
+        <label class="role-option" id="roleAdminOpt">
+          <input type="radio" name="role" value="admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 6v6c0 5 4 8.5 8 9 4-.5 8-4 8-9V6l-8-3Z"/><path d="M9.5 12.5 11 14l3.5-3.5"/></svg>
+          <span>Admin</span>
+        </label>
+      </div>
+
+      <div class="form-field">
+        <label for="fullName">Full Name</label>
+        <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          <input type="text" id="fullName" placeholder="Jane Doe" required autocomplete="name">
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label for="email">Email</label>
+        <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 7 9 6 9-6M4 6h16v12H4Z"/></svg>
+          <input type="email" id="email" placeholder="you@example.com" required autocomplete="email">
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label for="password">Password</label>
+        <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password" minlength="6">
+          <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="field-hint">At least 6 characters.</div>
+      </div>
+
+      <div class="form-field">
+        <label for="confirmPassword">Confirm Password</label>
+        <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+          <input type="password" id="confirmPassword" placeholder="••••••••" required autocomplete="new-password" minlength="6">
+          <button type="button" class="pw-toggle" id="pwToggle2" aria-label="Show password">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="terms-row">
+        <input type="checkbox" id="terms" required>
+        <label for="terms">I agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a></label>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-block" id="signupBtn">
+        <span class="spinner"></span>
+        <span class="btn-label">Create Account</span>
+      </button>
+    </form>
+
+    <div class="auth-divider">SECURED WITH TLS</div>
+
+    <div class="auth-footer">
+      Already have an account? <a href="login.html">Log in</a>
+    </div>
+  </div>
+</div>
+
+<!-- Redirect overlay -->
+<div class="redirect-overlay" id="redirectOverlay">
+  <div class="redirect-ring">
+    <svg viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="27" stroke="rgba(148,163,184,0.15)"/>
+      <circle cx="32" cy="32" r="27" stroke="url(#g2)" stroke-dasharray="90 200" stroke-linecap="round"/>
+      <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22D3EE"/><stop offset="100%" stop-color="#4ADE80"/></linearGradient></defs>
+    </svg>
+  </div>
+  <div class="redirect-text">Creating your account &amp; loading <b id="redirectTarget">dashboard</b>…</div>
+</div>
+
+<script>
+// ============================================================
+// WiFiGuard AI — Sign up flow (front-end demo)
+//
+// In a real Flask deployment, the fetch('/api/signup', …) call below
+// would hit a Flask route that creates the user in the database and
+// returns { success, role, redirect_url }.
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  const roleOptions      = document.querySelectorAll('.role-option');
+  const signupForm       = document.getElementById('signupForm');
+  const signupBtn        = document.getElementById('signupBtn');
+  const fullNameInput    = document.getElementById('fullName');
+  const emailInput       = document.getElementById('email');
+  const passwordInput    = document.getElementById('password');
+  const confirmInput     = document.getElementById('confirmPassword');
+  const termsInput       = document.getElementById('terms');
+  const pwToggle         = document.getElementById('pwToggle');
+  const pwToggle2        = document.getElementById('pwToggle2');
+  const authError        = document.getElementById('authError');
+  const authErrorText    = document.getElementById('authErrorText');
+  const overlay          = document.getElementById('redirectOverlay');
+  const redirectTarget   = document.getElementById('redirectTarget');
+
+  let selectedRole = 'user';
+
+  // ---- Role selection ----
+  roleOptions.forEach(opt => {
+    opt.addEventListener('click', () => {
+      roleOptions.forEach(o => o.classList.remove('active'));
+      opt.classList.add('active');
+      opt.querySelector('input').checked = true;
+      selectedRole = opt.querySelector('input').value;
+    });
+  });
+
+  // ---- Password visibility toggles ----
+  pwToggle.addEventListener('click', () => {
+    passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+  });
+  pwToggle2.addEventListener('click', () => {
+    confirmInput.type = confirmInput.type === 'password' ? 'text' : 'password';
+  });
+
+  function showError(message) {
+    authErrorText.textContent = message;
+    authError.classList.add('show');
+  }
+  function hideError() {
+    authError.classList.remove('show');
+  }
+
+  // ---- Submit / create account ----
+  signupForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    hideError();
+
+    const fullName = fullNameInput.value.trim();
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    const confirmPassword = confirmInput.value;
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (fullName.length < 2) {
+      showError('Please enter your full name.');
+      return;
+    }
+    if (!emailPattern.test(email)) {
+      showError('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 6) {
+      showError('Password must be at least 6 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      showError('Passwords do not match.');
+      return;
+    }
+    if (!termsInput.checked) {
+      showError('You must agree to the Terms of Service to continue.');
+      return;
+    }
+
+    setLoading(true);
+
+    // Replace this block with:
+    //   const res = await fetch('/api/signup', { method:'POST', body: JSON.stringify({fullName,email,password,role:selectedRole}) });
+    //   const data = await res.json();
+    simulateSignup(fullName, email, password, selectedRole)
+      .then(result => {
+        if (!result.success) {
+          setLoading(false);
+          showError(result.message);
+          return;
+        }
+        runRedirect(result.role, result.redirectUrl);
+      });
+  });
+
+  function setLoading(isLoading) {
+    signupBtn.classList.toggle('loading', isLoading);
+    signupBtn.disabled = isLoading;
+    signupBtn.querySelector('.btn-label').textContent = isLoading ? 'Creating account…' : 'Create Account';
+  }
+
+  // ---- Mock signup logic ----
+  function simulateSignup(fullName, email, password, role) {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        resolve({
+          success: true,
+          role: role,
+          redirectUrl: role === 'admin' ? 'admin-dashboard.html' : 'user-dashboard.html'
+        });
+      }, 900);
+    });
+  }
+
+  // ---- Smooth redirect transition ----
+  function runRedirect(role, url) {
+    redirectTarget.textContent = role === 'admin' ? 'Admin Dashboard' : 'User Dashboard';
+    overlay.classList.add('show');
+
+    try {
+      sessionStorage.setItem('wg_role', role);
+      sessionStorage.setItem('wg_email', emailInput.value.trim());
+      sessionStorage.setItem('wg_name', fullNameInput.value.trim());
+    } catch (err) { /* storage unavailable — non-blocking */ }
+
+    setTimeout(() => { window.location.href = url; }, 1100);
+  }
+});
+</script>
+</body>
+</html>
