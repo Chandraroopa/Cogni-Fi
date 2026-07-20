@@ -22,12 +22,12 @@ This project is our **Bachelor of Engineering (CSE)** final year project at Cana
 
 ## Team CogniFi
 
-| Name | USN |
+| Name | Branch |
 |------|-----|
-| Bhoomika | 4CB23CS042 |
-| A Ankitha | 4CB23CS001 |
-| Ashwini Shenoy | 4CB23CS031 |
-| Chandraroopa | 4CB23CS046 |
+| Bhoomika | CSE |
+| A Ankitha | CSE |
+| Ashwini Shenoy | CSE |
+| Chandraroopa | CSE |
 
 ---
 
