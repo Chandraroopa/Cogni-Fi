@@ -3,16 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login — WiFiGuard AI</title>
-<meta name="description" content="Sign in to WiFiGuard AI to view live network trust scores and threat detection.">
+<title>Login — Cogni-Fi</title>
+<meta name="description" content="Sign in to Cogni-Fi to view live network trust scores and threat detection.">
 <meta name="theme-color" content="#090D18">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%233B82F6'/%3E%3Cstop offset='100%25' stop-color='%2322C55E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z' fill='url(%23g)'/%3E%3Cpath d='m9 12 2 2 4-4' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* ============================================================
-   WiFiGuard AI — Design tokens
-   ============================================================ */
+
 :root{
   /* Surfaces */
   --bg:            #090D18;
@@ -135,6 +133,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   background: linear-gradient(135deg, var(--blue) 0%, #2563EB 100%);
   color: #fff;
   box-shadow: 0 8px 24px -8px rgba(59,130,246,0.6);
+      width:100%;
+    height:50px;
+    font-size:16px;
+    font-weight:600;
 }
 .btn-primary:hover{ box-shadow: 0 10px 30px -6px rgba(59,130,246,0.75); transform: translateY(-1px); }
 
@@ -384,13 +386,12 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 900px){ .contact-grid{ grid-template-columns: 1fr; } }
 .contact-info-row{ display:flex; gap: 14px; align-items:flex-start; padding: 16px 0; border-bottom: 1px solid var(--border); }
 .contact-info-row:last-child{ border:none; }
-.form-field{ margin-bottom: 18px; }
-.form-field label{ display:flex; align-items:center; gap:8px; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 7px; font-weight:600; }
-.form-field label svg{ width:15px; height:15px; color: var(--text-dim); flex-shrink:0; }
+.form-field{ margin-bottom: 22px; }
+.form-field label{ display:block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 7px; font-weight:600; }
 .form-field textarea,
 .form-field input{
-  width:100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border-strong);
-  border-radius: 10px; padding: 12px 14px; color: var(--text); font-family: var(--font-body); font-size: 0.92rem;
+  width:100%; height:50px; padding:12px 46px 12px 46px; font-size:15px; background: rgba(255,255,255,0.03); 
+    border: 1px solid var(--border-strong);border-radius: 10px; color: var(--text); font-family: var(--font-body); 
 }
 .form-field textarea{ resize: vertical; min-height: 110px; }
 .form-field input:focus, .form-field textarea:focus{ border-color: var(--cyan); outline:none; }
@@ -416,15 +417,15 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   padding: 40px 20px; position: relative; overflow:hidden;
 }
 .auth-card{
-  width: 100%; max-width: 420px; position: relative; z-index: 2;
+  width: 100%; max-width: 500px; position: relative; z-index: 2;
   background: var(--glass-strong); border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg); padding: 40px 36px;
+  border-radius: var(--radius-lg); padding: 40px;
   backdrop-filter: blur(20px); box-shadow: 0 25px 60px -20px rgba(0,0,0,0.7);
 }
-.auth-logo{ display:flex; flex-direction:column; align-items:center; gap: 14px; margin-bottom: 26px; }
-.auth-head{ text-align:center; margin-bottom: 28px; }
-.auth-head h2{ font-size: 1.5rem; margin-bottom: 6px; }
-.auth-head p{ font-size: 0.9rem; }
+.auth-logo{ display:flex; flex-direction:column; align-items:center; gap: 14px; margin-bottom: 20px; }
+.auth-head{ text-align:center; margin-bottom: 24px; }
+.auth-head h2{ font-size: 1.5rem; margin-bottom: 10px; }
+.auth-head p{ font-size: 0.9rem; margin-bottom: 0;}
 
 .role-select{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 22px; }
 .role-option{
@@ -442,16 +443,34 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .role-option.active svg, .role-option.active span{ color: var(--cyan); }
 
 .input-icon-wrap{ position:relative; }
-.form-field input[type="password"]{ padding-right: 42px; }
-.pw-toggle{
-  position:absolute; right:10px; top:50%; transform:translateY(-50%);
-  display:flex; align-items:center; justify-content:center;
-  width:28px; height:28px; padding:0;
-  background:none; border:none; color:var(--text-dim); cursor:pointer;
-}
-.pw-toggle svg{ width:16px; height:16px; flex-shrink:0; }
+.input-icon-wrap svg{ position:absolute; left:15px; top:50%; transform:translateY(-50%); width:18px; height:18px; color: var(--text-dim); stroke: currentColor;
+    fill: none;}
+.input-icon-wrap input{ padding-left: 40px; }
 
-.auth-row{ display:flex; align-items:center; justify-content:space-between; margin: 6px 0 22px; font-size: 0.83rem; }
+.pw-toggle{
+    position:absolute;
+    right:14px;
+    top:50%;
+    transform:translateY(-50%);
+    background:none;
+    border:none;
+    color:var(--text-dim);
+    cursor:pointer;
+    padding:4px;
+    width:28px;
+    height:28px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+.pw-toggle svg{
+    width:16px;
+    height:16px;
+    stroke:currentColor;
+    fill:none;
+}
+
+.auth-row{ display:flex; align-items:center; justify-content:space-between; margin: 12px 0 24px; font-size: 0.83rem; gap:12px; flex-wrap:wrap;}
 .remember{ display:flex; align-items:center; gap: 8px; color: var(--text-muted); }
 .remember input{ accent-color: var(--cyan); width:14px; height:14px; }
 .forgot{ color: var(--blue-bright); font-weight: 600; }
@@ -628,6 +647,36 @@ tr:last-child td{ border-bottom:none; }
 .flex{ display:flex; } .items-center{ align-items:center; } .gap-8{ gap:8px; } .gap-10{gap:10px;}
 .text-muted{ color: var(--text-muted); } .mt-6{ margin-top:6px; }
 
+@media (max-width:600px){
+
+    .auth-shell{
+        padding:20px;
+    }
+
+    .auth-card{
+        max-width:100%;
+        padding:28px 22px;
+    }
+
+    .btn-primary{
+        width:100%;
+    }
+
+    .login-options{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .role-select{
+        grid-template-columns:1fr;
+    }
+
+    .auth-row{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+}
+
 </style>
 </head>
 <body>
@@ -648,7 +697,7 @@ tr:last-child td{ border-bottom:none; }
 
     <div class="auth-head">
       <h2>Welcome Back</h2>
-      <p>Sign in to continue to WiFiGuard AI</p>
+      <p>Sign in to continue to Cogni-Fi</p>
     </div>
 
     <div class="demo-hint">
@@ -677,18 +726,30 @@ tr:last-child td{ border-bottom:none; }
       </div>
 
       <div class="form-field">
-        <label for="email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 7 9 6 9-6M4 6h16v12H4Z"/></svg>Email</label>
+        <label for="email">Email</label>
         <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" stroke-width="2">
+        <path d="M3 7l9 6 9-6"></path>
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+    </svg>
           <input type="email" id="email" placeholder="you@example.com" required autocomplete="username">
         </div>
       </div>
 
       <div class="form-field">
-        <label for="password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Password</label>
+        <label for="password">Password</label>
         <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" stroke-width="2">
+        <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+        <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+    </svg>
           <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
           <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+
           </button>
         </div>
       </div>
@@ -725,13 +786,6 @@ tr:last-child td{ border-bottom:none; }
 </div>
 
 <script>
-// ============================================================
-// WiFiGuard AI — Login authentication flow (front-end demo)
-//
-// In a real Flask deployment, the fetch('/api/login', …) call below
-// would hit a Flask route that verifies credentials against the
-// database and returns { success, role, redirect_url }.
-// ============================================================
 
 document.addEventListener('DOMContentLoaded', () => {
   const roleOptions   = document.querySelectorAll('.role-option');

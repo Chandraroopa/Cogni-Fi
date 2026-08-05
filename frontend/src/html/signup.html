@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sign Up — WiFiGuard AI</title>
-<meta name="description" content="Create your WiFiGuard AI account to view live network trust scores and threat detection.">
+<meta name="description" content="Create your Cogni-Fi account to view live network trust scores and threat detection.">
 <meta name="theme-color" content="#090D18">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%233B82F6'/%3E%3Cstop offset='100%25' stop-color='%2322C55E'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M12 2 3 6v6c0 5 4 8.5 9 10 5-1.5 9-5 9-10V6l-9-4Z' fill='url(%23g)'/%3E%3Cpath d='m9 12 2 2 4-4' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -100,7 +100,8 @@ a:focus-visible, button:focus-visible, input:focus-visible{
   padding: 40px 20px; position: relative; overflow:hidden;
 }
 .auth-card{
-  width: 100%; max-width: 420px; position: relative; z-index: 2;
+  width: 100%;  max-width:500px;
+    padding:40px; position: relative; z-index: 2;
   background: var(--glass-strong); border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg); padding: 40px 36px;
   backdrop-filter: blur(20px); box-shadow: 0 25px 60px -20px rgba(0,0,0,0.7);
@@ -118,32 +119,91 @@ a:focus-visible, button:focus-visible, input:focus-visible{
 .auth-head h2{ font-size: 1.5rem; margin-bottom: 6px; }
 .auth-head p{ font-size: 0.9rem; }
 
-.form-field{ margin-bottom: 18px; }
-.form-field label{
-  display:flex; align-items:center; gap: 8px;
-  font-size: 0.8rem; color: var(--text-muted); margin-bottom: 7px; font-weight:600;
+.role-select{ display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 28px; }
+.role-option{
+  display:flex; flex-direction:column; align-items:center; gap: 8px;
+  padding: 16px 10px; border-radius: 12px; border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.02); cursor:pointer; transition: all .18s ease;
 }
-.form-field label svg{ width:15px; height:15px; color: var(--text-dim); flex-shrink:0; }
-.input-icon-wrap{ position:relative; }
+.role-option input{ display:none; }
+.role-option svg{ width: 20px; height: 20px; color: var(--text-muted); transition: color .18s; }
+.role-option span{ font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+.role-option.active{
+  border-color: var(--cyan); background: rgba(34,211,238,0.08);
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.12);
+}
+.role-option.active svg, .role-option.active span{ color: var(--cyan); }
+
+.form-field{ margin-bottom: 22px; }
+.form-field label{ display:block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 7px; font-weight:600; }
+.input-icon-wrap{
+    position: relative;
+}
+
+.input-icon-wrap svg{
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+    color: var(--text-dim);
+    pointer-events: none;
+}
+
 .form-field input{
-  width:100%; background: rgba(255,255,255,0.03); border: 1px solid var(--border-strong);
-  border-radius: 10px; padding: 12px 14px; color: var(--text); font-family: var(--font-body); font-size: 0.92rem;
+    width:100%;
+    height:50px;
+    padding:12px 46px;
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border-strong);
+    border-radius:10px;
+    color:var(--text);
+    font-size:15px;
+}
+
+.pw-toggle{
+    position:absolute;
+    right:14px;
+    top:50%;
+    transform:translateY(-50%);
+    width:28px;
+    height:28px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:transparent;
+    border:none;
+    appearance:none;
+    -webkit-appearance:none;
+    color:var(--text-dim);
+    cursor:pointer;
+    padding:0;
+}
+
+.pw-toggle:hover{
+    color:var(--cyan);
+}
+
+.pw-toggle svg{
+    width:16px;
+    height:16px;
+    stroke:currentColor;
+    fill:none;
 }
 .form-field input:focus{ border-color: var(--cyan); outline:none; }
-.form-field input[type="password"]{ padding-right: 42px; }
-.pw-toggle{
-  position:absolute; right:10px; top:50%; transform:translateY(-50%);
-  display:flex; align-items:center; justify-content:center;
-  width:28px; height:28px; padding:0;
-  background:none; border:none; color:var(--text-dim); cursor:pointer;
-}
-.pw-toggle svg{ width:16px; height:16px; flex-shrink:0; }
 
 .field-hint{ font-size: 0.72rem; color: var(--text-dim); margin-top: 6px; }
 .field-hint.err{ color: var(--red); }
 .field-hint.ok{ color: var(--green-bright); }
 
-.terms-row{ display:flex; align-items:flex-start; gap: 10px; margin: 6px 0 22px; font-size: 0.82rem; color: var(--text-muted); }
+.terms-row{ display:flex; align-items:flex-start; gap: 10px;  margin:10px 0 24px;
+    line-height:1.5; font-size: 0.82rem; color: var(--text-muted); }
+.terms-row label{
+    flex:1;
+}
 .terms-row input{ accent-color: var(--cyan); width:14px; height:14px; margin-top: 3px; flex-shrink:0; }
 .terms-row a{ color: var(--blue-bright); font-weight: 600; }
 .terms-row a:hover{ color: var(--cyan); }
@@ -182,6 +242,26 @@ a:focus-visible, button:focus-visible, input:focus-visible{
 .redirect-ring circle{ fill:none; stroke-width:5; stroke-linecap:round; }
 .redirect-text{ font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted); letter-spacing: .03em; }
 .redirect-text b{ color: var(--cyan); }
+
+@media (max-width:600px){
+
+    .auth-shell{
+        padding:20px;
+    }
+
+    .auth-card{
+        max-width:100%;
+        padding:28px 22px;
+    }
+
+    .role-select{
+        grid-template-columns:1fr;
+    }
+
+    .btn{
+        width:100%;
+    }
+}
 </style>
 </head>
 <body>
@@ -202,7 +282,7 @@ a:focus-visible, button:focus-visible, input:focus-visible{
 
     <div class="auth-head">
       <h2>Create Your Account</h2>
-      <p>Get started with WiFiGuard AI in seconds</p>
+      <p>Get started with Cogni-Fi in seconds</p>
     </div>
 
     <div id="authError" class="auth-error">
@@ -212,36 +292,59 @@ a:focus-visible, button:focus-visible, input:focus-visible{
 
     <form id="signupForm">
       <div class="form-field">
-        <label for="fullName"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Full Name</label>
+        <label for="fullName">Full Name</label>
         <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="8" r="4"/>
+        <path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>
+    </svg>
           <input type="text" id="fullName" placeholder="Jane Doe" required autocomplete="name">
         </div>
       </div>
 
       <div class="form-field">
-        <label for="email"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 7 9 6 9-6M4 6h16v12H4Z"/></svg>Email</label>
+        <label for="email">Email</label>
         <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 7l9 6 9-6"/>
+        <rect x="3" y="5" width="18" height="14" rx="2"/>
+    </svg>
           <input type="email" id="email" placeholder="you@example.com" required autocomplete="email">
         </div>
       </div>
 
       <div class="form-field">
-        <label for="password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Password</label>
+        <label for="password">Password</label>
         <div class="input-icon-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="4" y="10" width="16" height="10" rx="2"/>
+        <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+    </svg>
           <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password" minlength="6">
           <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
           </button>
         </div>
         <div class="field-hint">At least 6 characters.</div>
       </div>
 
       <div class="form-field">
-        <label for="confirmPassword"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Confirm Password</label>
+        <label for="confirmPassword">Confirm Password</label>
         <div class="input-icon-wrap">
+           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="4" y="10" width="16" height="10" rx="2"/>
+        <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
+    </svg>
           <input type="password" id="confirmPassword" placeholder="••••••••" required autocomplete="new-password" minlength="6">
           <button type="button" class="pw-toggle" id="pwToggle2" aria-label="Show password">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+
           </button>
         </div>
       </div>
