@@ -20,7 +20,7 @@
 
   /* Text */
   --text:        #E9EEF7;
-  --text-muted:  #8C97AE;
+  --text-muted:  #CBD5E1;
   --text-dim:    #5E6A82;
   --white:       #FFFFFF;
 
@@ -74,12 +74,10 @@ a{ color: inherit; text-decoration: none; }
 
 ::selection{ background: rgba(59,130,246,0.35); color: #fff; }
 
-/* Reduced motion */
 @media (prefers-reduced-motion: reduce){
   *{ animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
 
-/* Focus visibility */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{
   outline: 2px solid var(--cyan);
   outline-offset: 3px;
@@ -226,7 +224,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .hero-stat b{ display:block; font-family: var(--font-display); font-size: 1.5rem; color: var(--white); }
 .hero-stat span{ font-size: 0.8rem; color: var(--text-dim); }
 
-/* ---- Signature element: Trust Score radar/ring visual ---- */
 .scan-panel{
   position: relative;
   background: var(--glass);
@@ -294,7 +291,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 
 .section-alt{ background: linear-gradient(180deg, transparent, rgba(255,255,255,0.015) 20%, rgba(255,255,255,0.015) 80%, transparent); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 
-/* ---- Feature cards ---- */
 .grid-features{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 @media (max-width: 980px){ .grid-features{ grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 640px){ .grid-features{ grid-template-columns: 1fr; } }
@@ -324,7 +320,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .card h3{ font-size: 1.06rem; margin-bottom: 8px; }
 .card p{ font-size: 0.9rem; }
 
-/* ---- About / how-it-works ---- */
 .about-grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items:center; }
 @media (max-width: 900px){ .about-grid{ grid-template-columns: 1fr; } }
 .step-list{ display:flex; flex-direction:column; gap: 18px; }
@@ -349,7 +344,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .bar-track{ flex:1; height: 6px; border-radius: 100px; background: rgba(255,255,255,0.06); overflow:hidden; }
 .bar-fill{ height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--blue), var(--cyan)); }
 
-/* ---- Contact ---- */
 .contact-grid{ display:grid; grid-template-columns: 0.9fr 1.1fr; gap: 40px; }
 @media (max-width: 900px){ .contact-grid{ grid-template-columns: 1fr; } }
 .contact-info-row{ display:flex; gap: 14px; align-items:flex-start; padding: 16px 0; border-bottom: 1px solid var(--border); }
@@ -445,7 +439,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 .demo-hint b{ color: var(--text-muted); }
 
-/* Full-screen redirect transition */
 .redirect-overlay{
   position: fixed; inset:0; z-index: 999; background: var(--bg);
   display:flex; align-items:center; justify-content:center; flex-direction:column; gap: 22px;
@@ -458,10 +451,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .redirect-text{ font-family: var(--font-mono); font-size: 0.85rem; color: var(--text-muted); letter-spacing: .03em; }
 .redirect-text b{ color: var(--cyan); }
 
-.dash{
-    display:block;
-    min-height:100vh;
-}
+.dash{  display:block;
+    min-height:100vh; }
+
 .sidebar{
     position: fixed;
     top: 0;
@@ -496,6 +488,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .sidebar-scrim.show{
     display: block;
 }
+
 .sidebar-brand{ display:flex; align-items:center; gap:10px; padding: 8px 10px 22px; }
 .sidebar-brand span.name{ font-family: var(--font-display); font-weight:700; font-size:1rem; color:var(--white); }
 .side-section-label{ font-size: 0.68rem; text-transform:uppercase; letter-spacing:.08em; color: var(--text-dim); padding: 16px 12px 8px; }
