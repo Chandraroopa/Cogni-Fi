@@ -6,36 +6,44 @@ import Footer from './components/common/Footer';
 import ProtectedRoute from './components/common/ProtectedRoute';
 
 import Home from './components/pages/Home';
-import Login from './components/pages/Login';       // Member 2 (Ashwini) builds this
-import SignUp from './components/pages/SignUp';     // Member 3 (Bhoomika) builds this
-import Dashboard from './components/pages/Dashboard'; // Member 4 (Chandraroopa) builds this
+import Login from './components/pages/Login';
+import SignUp from './components/pages/SignUp';
+import Dashboard from './components/pages/Dashboard';
 
-import { AuthProvider } from './context/AuthContext'; // Member 2 (Ashwini) builds this
+import { AuthProvider } from './context/AuthContext';
 
 import './App.css';
 
 function App() {
   return (
-    // AuthProvider wraps the whole app so login state is available everywhere
     <AuthProvider>
       <Router>
-        <Navbar />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
+        <div
+          className="min-h-screen bg-black bg-cover bg-center bg-fixed"
+          style={{
+            backgroundImage:
+              "url('https://raw.githubusercontent.com/prebuiltui/prebuiltui/refs/heads/main/assets/hero/bg-gradient-2.png')",
+          }}
+        >
+          <Navbar />
 
-          {/* Protected route - only accessible if logged in */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-        <Footer />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<SignUp />} />
+
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+
+          <Footer />
+        </div>
       </Router>
     </AuthProvider>
   );
