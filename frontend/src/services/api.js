@@ -1,22 +1,43 @@
 import axios from 'axios';
 
-/**
- * PLACEHOLDER — Member 2 (Ashwini shenoy) builds the real version.
- * Expected structure (from task breakdown):
- *
- * const api = axios.create({ baseURL: 'https://your-backend-url/api' });
- *
- * api.interceptors.request.use((config) => {
- *   const token = localStorage.getItem('token');
- *   if (token) config.headers.Authorization = `Bearer ${token}`;
- *   return config;
- * });
- *
- * export default api;
- */
-
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
+// Add JWT token to every authenticated request
+api.interceptors.request.use(
+  (config) => {
+    const token =
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('token');
+
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Handle authentication errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('user');
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export default api;
+
