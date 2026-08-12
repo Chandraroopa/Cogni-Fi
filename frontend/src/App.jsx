@@ -9,7 +9,8 @@ import Home from './components/pages/Home';
 import Login from './components/pages/Login';
 import SignUp from './components/pages/SignUp';
 import Dashboard from './components/pages/Dashboard';
-
+import WifiScan from './components/pages/WifiScan';
+import NetworkAnalysis from './components/pages/NetworkAnalysis';
 import { AuthProvider } from './context/AuthContext';
 
 import './App.css';
@@ -25,24 +26,59 @@ function App() {
               "url('https://raw.githubusercontent.com/prebuiltui/prebuiltui/refs/heads/main/assets/hero/bg-gradient-2.png')",
           }}
         >
-          <Navbar />
 
           <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<SignUp />} />
+
+            <Route
+              path="/"
+              element={
+                <>
+                  <Navbar />
+                  <Home />
+                  <Footer />
+                </>
+              }
+            />
+
+            <Route
+              path="/login"
+              element={
+                <>
+                  <Navbar />
+                  <Login />
+                  <Footer />
+                </>
+              }
+            />
+
+            <Route
+              path="/signup"
+              element={
+                <>
+                  <Navbar />
+                  <SignUp />
+                  <Footer />
+                </>
+              }
+            />
 
             <Route
               path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
+              element={<Dashboard />}
+            />
+
+            <Route
+              path="/network-analysis"
+              element={<NetworkAnalysis />}
+            />
+            <Route
+              path="/wifi-scan"
+              element={<WifiScan />}
             />
           </Routes>
 
-          <Footer />
+          
+
         </div>
       </Router>
     </AuthProvider>
