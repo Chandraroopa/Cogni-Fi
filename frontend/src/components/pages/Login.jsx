@@ -80,30 +80,30 @@ function Login() {
   };
 
   const handleGoogleLogin = async () => {
-    setError('');
     const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-            redirectTo: window.location.origin + '/login',
-        },
+      provider: 'google',
+      options: {
+        redirectTo: 'http://localhost:5173/dashboard',
+      },
     });
+
     if (error) {
-        setError(error.message);
+      setServerError(error.message);
     }
   };
 
   const handleAppleLogin = async () => {
-    setError('');
     const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
-        options: {
-            redirectTo: window.location.origin + '/login',
-        },
+      provider: 'apple',
+      options: {
+        redirectTo: 'http://localhost:5173/dashboard',
+      },
     });
+
     if (error) {
-        setError(error.message);
+      setServerError(error.message);
     }
-  };  
+  }; 
 
   return (
     <main className="relative flex min-h-[calc(100vh-73px)] items-center justify-center overflow-hidden bg-[#050816] px-4 py-10">
