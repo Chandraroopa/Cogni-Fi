@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient';
 
 function Login() {
   const { login } = useAuth();
@@ -78,6 +79,32 @@ function Login() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setError('');
+    const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+            redirectTo: window.location.origin + '/login',
+        },
+    });
+    if (error) {
+        setError(error.message);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setError('');
+    const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'apple',
+        options: {
+            redirectTo: window.location.origin + '/login',
+        },
+    });
+    if (error) {
+        setError(error.message);
+    }
+  };  
+
   return (
     <main className="relative flex min-h-[calc(100vh-73px)] items-center justify-center overflow-hidden bg-[#050816] px-4 py-10">
 
@@ -97,7 +124,7 @@ function Login() {
         </div>
 
         <p className="mb-2 text-sm font-semibold uppercase tracking-[0.25em] text-cyan-400">
-          CogniFi
+          Cogni-Fi
         </p>
 
         <h1 className="text-3xl font-bold text-white">
@@ -260,7 +287,7 @@ function Login() {
 
         {/* Remember + Forgot */}
         <div className="mb-7 flex items-center justify-between">
-          <label className="flex cursor-pointer items-center text-md text-slate-400">
+          <label className="flex cursor-pointer items-center gap-3 text-md text-slate-400">
             <input
               type="checkbox"
               name="rememberMe"
@@ -299,9 +326,7 @@ function Login() {
       <div className="flex gap-4">
         <button
           type="button"
-          onClick={() => {
-            window.location.href = 'http://localhost:5173/auth/google';
-          }}
+          onClick={handleGoogleLogin}
           className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-white/5 py-3 transition duration-300 hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:shadow-[0_0_18px_rgba(34,211,238,0.15)] text-sm font-medium text-slate-300 transition duration-300 hover:bg-white/10 hover:shadow-[0_0_18px_rgba(34,211,238,0.18)]"
         >
           <svg
@@ -333,9 +358,7 @@ function Login() {
         {/* Apple Login */}
         <button
           type="button"
-          onClick={() => {
-            window.location.href = 'http://localhost:5173/auth/apple';
-          }}
+          onClick={handleAppleLogin}
           className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-white/5 py-3 transition duration-300 hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:shadow-[0_0_18px_rgba(34,211,238,0.15)] text-sm font-medium text-slate-300 transition duration-300 hover:bg-white/10 hover:shadow-[0_0_18px_rgba(34,211,238,0.18)]"
         >
           <svg
@@ -352,7 +375,7 @@ function Login() {
       </div>
 
       {/* Sign up */}
-      <p className="relative top-3 mt-7 text-center text-sm text-slate-500">
+      <p className="relative top-3 mt-7 text-center text-md text-slate-500">
         Don't have an account?{' '}
         <Link
           to="/signup"
