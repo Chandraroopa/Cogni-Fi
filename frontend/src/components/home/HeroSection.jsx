@@ -8,7 +8,7 @@ function HeroSection() {
   const { isAuthenticated } = useAuth();
 
   return (
-    <section className="relative min-h-[calc(100vh-72px)] overflow-hidden bg-black">
+    <section id="home" className="relative min-h-[calc(100vh-72px)] overflow-hidden bg-black">
 
       <div className="absolute inset-0 bg-black/45" />
       <div className="absolute right-[15%] top-[25%] h-[420px] w-[420px] rounded-full bg-cyan-500/10 blur-[130px]" />
@@ -19,9 +19,9 @@ function HeroSection() {
           <div className="max-w-2xl">
             <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/5 px-4 py-2 text-xs font-medium tracking-[0.15em] text-cyan-300">
               <ShieldCheck size={14} />
-              AI POWERED
+              REAL-TIME
               <span className="text-slate-600">•</span>
-              PRIVACY FIRST
+              NETWORK INTELLIGENCE
             </div>
 
             <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight text-white sm:text-5xl md:text-6xl lg:text-[62px]">
@@ -64,10 +64,10 @@ function HeroSection() {
             <div className="absolute h-[280px] w-[280px] rounded-full bg-cyan-400/15 blur-[100px] md:h-[380px] md:w-[380px]" />
             <div className="absolute right-0 h-[220px] w-[220px] rounded-full bg-fuchsia-500/15 blur-[90px]" />
 
-            <div className="absolute mt-[-120px] h-[300px] w-[300px] rounded-full border border-cyan-400/20 md:h-[390px] md:w-[390px]" />
-            <div className="absolute mt-[-120px] h-[230px] w-[230px] rounded-full border border-blue-500/20 md:h-[310px] md:w-[310px]" />
+            <div className="absolute mt-[-90px] h-[300px] w-[300px] rounded-full border border-cyan-400/20 md:h-[390px] md:w-[390px]" />
+            <div className="absolute mt-[-90px] h-[230px] w-[230px] rounded-full border border-blue-500/20 md:h-[310px] md:w-[310px]" />
 
-            <div className="relative mt-[-120px] flex h-[250px] w-[250px] items-center justify-center md:h-[340px] md:w-[340px]">
+            <div className="relative mt-[-90px] flex h-[250px] w-[250px] items-center justify-center md:h-[340px] md:w-[340px]">
               <div className="absolute inset-10 rounded-full bg-cyan-400/10 blur-2xl" />
               <img
                 src={cognifiLogo}

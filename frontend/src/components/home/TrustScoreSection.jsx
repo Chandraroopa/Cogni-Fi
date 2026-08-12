@@ -2,14 +2,14 @@ import React from 'react';
 
 function TrustScoreSection() {
   return (
-    <section className="relative overflow-hidden bg-black px-6 py-16 md:px-12 lg:px-20">
+    <section id='trust-score' className="relative overflow-hidden bg-black px-6 py-16 md:px-12 lg:px-20">
       <div className="absolute left-1/2 top-1/2 h-80 w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/5 blur-[120px]" />
 
       <div className="relative z-10 mx-auto max-w-[1200px]">
         <div className="text-center">
-          <span className="text-xs font-medium tracking-[0.25em] text-cyan-400">
+          <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/5 px-4 py-2 text-sm font-medium tracking-[0.15em] text-cyan-300">
             TRUST SCORE
-          </span>
+          </div>
 
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-5xl">
             Know how much you can
@@ -59,7 +59,7 @@ function TrustScoreSection() {
               </div>
             </div>
 
-            <div className="mt-10 grid gap-4 border-t border-white/10 pt-7 sm:grid-cols-3">
+            <div className="mt-10 grid gap-5 border-t border-white/10 pt-7 sm:grid-cols-3">
               <div className="text-center">
                 <p className="text-xs font-medium uppercase tracking-wider text-red-400">
                   Risky
