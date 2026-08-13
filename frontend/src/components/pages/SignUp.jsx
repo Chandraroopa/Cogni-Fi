@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
-
+import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 //import api from '../../services/api';
-
 import InputField from '../common/InputField';
 import PasswordStrengthMeter from '../common/PasswordStrengthMeter';
 
 function SignUp() {
   const navigate = useNavigate();
-
   const [form, setForm] = useState({
     fullName: '',
     email: '',
@@ -38,7 +36,6 @@ function SignUp() {
       ...prev,
       [name]: '',
     }));
-
     setServerError('');
   };
 
@@ -84,7 +81,6 @@ function SignUp() {
       newErrors.terms =
         'You must accept the Terms & Conditions.';
     }
-
     return newErrors;
   };
 
@@ -135,105 +131,11 @@ function SignUp() {
     }
   };
 
-  const userIcon = (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </svg>
-  );
-
-  const mailIcon = (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 7 9 6 9-6" />
-    </svg>
-  );
-
-  const lockIcon = (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="4" y="10" width="16" height="11" rx="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-
-  const eyeIcon = (visible) => (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {visible ? (
-        <>
-          <path d="M3 3l18 18" />
-          <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
-          <path d="M9.9 4.2A10.5 10.5 0 0 1 12 4c7 0 10 8 10 8a16.7 16.7 0 0 1-3.2 4.4" />
-          <path d="M6.6 6.6C3.8 8.5 2 12 2 12s3.5 8 10 8a9.9 9.9 0 0 0 4.1-.9" />
-        </>
-      ) : (
-        <>
-          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-          <circle cx="12" cy="12" r="3" />
-        </>
-      )}
-    </svg>
-  );
-
   const handleGoogleSignup = async () => {
     setServerError('');
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/dashboard`,
-      },
-    });
-
-    if (error) {
-      setServerError(error.message);
-    }
-  };
-
-  const handleAppleSignup = async () => {
-    setServerError('');
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
       options: {
         redirectTo: `${window.location.origin}/dashboard`,
       },
@@ -287,7 +189,7 @@ function SignUp() {
               value={form.fullName}
               onChange={handleChange}
               error={errors.fullName}
-              icon={userIcon}
+              icon={<User size={17} strokeWidth={1.7} />}
             />
 
             <InputField
@@ -298,7 +200,7 @@ function SignUp() {
               value={form.email}
               onChange={handleChange}
               error={errors.email}
-              icon={mailIcon}
+              icon={<Mail size={17} strokeWidth={1.7} />}
             />
 
             <InputField
@@ -309,7 +211,7 @@ function SignUp() {
               value={form.password}
               onChange={handleChange}
               error={errors.password}
-              icon={lockIcon}
+              icon={<Lock size={17} strokeWidth={1.7} />}
               rightElement={
                 <button
                   type="button"
@@ -317,7 +219,11 @@ function SignUp() {
                   className="text-slate-500 transition hover:text-cyan-400"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {eyeIcon(showPassword)}
+                   {showPassword ? (
+                      <EyeOff size={18} strokeWidth={1.7} />
+                    ) : (
+                      <Eye size={18} strokeWidth={1.7} />
+                    )}
                 </button>
               }
             />
@@ -334,7 +240,7 @@ function SignUp() {
               value={form.confirmPassword}
               onChange={handleChange}
               error={errors.confirmPassword}
-              icon={lockIcon}
+              icon={<Lock size={17} strokeWidth={1.7} />}
               rightElement={
                 <button
                   type="button"
@@ -342,17 +248,15 @@ function SignUp() {
                     setShowConfirmPassword(!showConfirmPassword)
                   }
                   className="text-slate-500 transition hover:text-cyan-400"
-                  aria-label={
-                    showConfirmPassword
-                      ? 'Hide password'
-                      : 'Show password'
-                  }
-                >
-                  {eyeIcon(showConfirmPassword)}
+                  aria-label={ showConfirmPassword ? 'Hide password' : 'Show password' } >
+                   {showConfirmPassword ? (
+                      <EyeOff size={18} strokeWidth={1.7} />
+                    ) : (
+                      <Eye size={18} strokeWidth={1.7} />
+                    )}
                 </button>
               }
             />
-
             {/* Terms */}
             <div className="mb-6">
               <label className="flex cursor-pointer items-start gap-4 text-md text-slate-400">
@@ -361,15 +265,13 @@ function SignUp() {
                   name="terms"
                   checked={form.terms}
                   onChange={handleChange}
-                  className="mt-0.5 h-4 w-4 accent-cyan-400"
-                />
+                  className="mt-0.5 h-4 w-4 accent-cyan-400"/>
 
                 <span>
                   I agree to the{' '}
                   <button
                     type="button"
-                    className=" text-cyan-400 hover:text-cyan-300"
-                  >
+                    className=" text-cyan-400 hover:text-cyan-300">
                     Terms & Conditions
                   </button>
                   .
@@ -387,8 +289,7 @@ function SignUp() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-cyan-600 py-3.5 text-sm font-bold text-slate-950 transition duration-300 hover:bg-cyan-400 hover:shadow-[0_0_25px_rgba(34,211,238,0.55)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
+              className="w-full rounded-xl bg-cyan-600 py-3.5 text-sm font-bold text-slate-950 transition duration-300 hover:bg-cyan-400 hover:shadow-[0_0_25px_rgba(34,211,238,0.55)] disabled:cursor-not-allowed disabled:opacity-60">
               {loading ? 'Creating account...' : 'Create account'}
             </button>
 
@@ -398,19 +299,16 @@ function SignUp() {
               <div className="h-px flex-1 bg-slate-700" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <button
                 type="button"
                 onClick={handleGoogleSignup}
-                className="flex items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-white/5 py-3 transition duration-300 hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:shadow-[0_0_18px_rgba(34,211,238,0.15)]"
-              >
-                {/* Google icon */}
+                className="flex items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-white/5 py-3 transition duration-300 hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:shadow-[0_0_18px_rgba(34,211,238,0.15)]">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="18"
                   height="18"
-                  viewBox="0 0 48 48"
-                >
+                  viewBox="0 0 48 48">
                   <path
                     fill="#FFC107"
                     d="M43.611 20.083H42V20H24v8h11.303C33.649 32.657 29.22 36 24 36c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917"
@@ -428,31 +326,9 @@ function SignUp() {
                     d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917"
                   />
                 </svg>
-
                 <span className="text-sm text-slate-300">Continue with Google</span>
               </button>
-
-              <button
-                type="button"
-                onClick={handleAppleSignup}
-                className="flex items-center justify-center gap-2 rounded-xl border border-slate-700/80 bg-white/5 py-3 transition duration-300 hover:border-cyan-400/40 hover:bg-cyan-400/5 hover:shadow-[0_0_18px_rgba(34,211,238,0.15)]"
-              >
-                {/* Apple icon */}
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                  className="text-white"
-                >
-                  <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.09.8 1.19-.24 2.33-.93 3.6-.84 1.54.12 2.7.74 3.47 1.88-3.18 1.9-2.43 6.08.49 7.26-.58 1.52-1.34 3.03-2.65 3.87zM12.03 7.25C11.88 4.99 13.71 3.13 15.78 3c.29 2.6-2.36 4.52-3.75 4.25z" />
-                </svg>
-
-                <span className="text-sm text-slate-300">Continue with Apple</span>
-              </button>
             </div>
-
           </form>
 
           {/* Login */}
