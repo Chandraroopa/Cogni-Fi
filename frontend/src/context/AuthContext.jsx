@@ -5,7 +5,7 @@ import React, {
   useState,
 } from 'react';
 
-import api from '../services/api';
+import { supabase } from '../services/supabaseClient';
 
 const AuthContext = createContext(null);
 
@@ -14,77 +14,55 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Check whether a user is already logged in
   useEffect(() => {
-    const token =
-      localStorage.getItem('token') ||
-      sessionStorage.getItem('token');
-
-    const storedUser =
-      localStorage.getItem('user') ||
-      sessionStorage.getItem('user');
-
-    if (token) {
-      setIsAuthenticated(true);
-
-      if (storedUser) {
-        try {
-          setUser(JSON.parse(storedUser));
-        } catch {
-          localStorage.removeItem('user');
-          sessionStorage.removeItem('user');
-        }
-      }
-    }
-
-    setLoading(false);
-  }, []);
-
-  // Login
-  const login = async (email, password, rememberMe = false) => {
-    const response = await api.post('/auth/login', {
-      email,
-      password,
+    // Check if a Supabase session already exists
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setIsAuthenticated(!!session);
+      setLoading(false);
     });
 
-    const token = response.data?.token;
-    const loggedInUser = response.data?.user;
+    // Listen for login, logout, signup, etc.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsAuthenticated(!!session);
+    });
 
-    if (!token) {
-      throw new Error('Authentication token was not returned.');
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Login with email and password
+  const login = async (email, password, rememberMe = false) => {
+    const { data, error } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (error) {
+      throw new Error(error.message);
     }
 
-    // Clear old authentication data first
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
+    if (data.user) {
+      setUser(data.user);
+      setIsAuthenticated(true);
+    }
 
-    // Remember Me determines where authentication is stored
-    const storage = rememberMe ? localStorage : sessionStorage;
-
-    storage.setItem('token', token);
-
-    const currentUser = loggedInUser || {
-      name: email.split('@')[0],
-      email,
-    };
-
-    storage.setItem('user', JSON.stringify(currentUser));
-
-    setUser(currentUser);
-    setIsAuthenticated(true);
-
-    return response.data;
+    return data;
   };
 
   // Logout
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+  const logout = async () => {
+    const { error } = await supabase.auth.signOut();
 
-    sessionStorage.removeItem('token');
-    sessionStorage.removeItem('user');
+    if (error) {
+      console.error('Logout error:', error);
+      return;
+    }
 
     setUser(null);
     setIsAuthenticated(false);
@@ -105,8 +83,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Custom hook
 export function useAuth() {
   return useContext(AuthContext);
 }
-

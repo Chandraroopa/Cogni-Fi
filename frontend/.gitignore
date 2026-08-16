@@ -32,3 +32,5 @@ Thumbs.db
 
 # Vite cache
 .vite/
+
+.env.local
