@@ -1,273 +1,408 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+
 import { useLocation, useNavigate } from 'react-router-dom';
+
 import {
+  connectToPacketStream,
+  disconnectFromPacketStream,
+} from "../../services/websocket";
+
+import {
+  ArrowLeft,
   Wifi,
   ShieldCheck,
   ShieldAlert,
-  Activity,
-  Network,
+  ShieldX,
+  Users,
   Clock3,
   AlertTriangle,
+  Activity,
   CheckCircle2,
-  XCircle,
+  LockKeyhole,
   Radio,
+  Signal,
   Server,
-  Gauge,
-  ArrowLeft,
+  BarChart3,
+  ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 
 function NetworkAnalysis() {
+  const [packets, setPackets] = useState([]);
+const [connectionStatus, setConnectionStatus] = useState("connecting");
+useEffect(() => {
+  const handlePacket = (packet) => {
+    setPackets((previousPackets) => {
+      const updatedPackets = [packet, ...previousPackets];
+
+      return updatedPackets.slice(0, 100);
+    });
+  };
+
+  const handleStatus = (status) => {
+    setConnectionStatus(status);
+  };
+
+  connectToPacketStream(handlePacket, handleStatus);
+
+  return () => {
+    disconnectFromPacketStream();
+  };
+}, []);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Network selected from Wi-Fi Scan page
   const selectedNetwork = location.state?.network;
 
-  // --------------------------------------------------
-  // Temporary frontend analysis data
-  // Later this will come from Flask/ML backend.
-  // --------------------------------------------------
+  /*
+   * =========================================================
+   * TIME RANGE
+   * =========================================================
+   */
+
+  const [timeRange, setTimeRange] = useState('30 min');
+
+  /*
+   * =========================================================
+   * TEMPORARY FRONTEND ANALYSIS DATA
+   *
+   * Later these values will come from Flask + ML backend.
+   * =========================================================
+   */
 
   const analysis = {
-    trustScore: 28,
-    status: 'Safe',
+    riskScore: 18,
 
-    latency: '24 ms',
-    packetRate: '182 pkt/s',
-    trafficDensity: 'Low',
-    connectionFrequency: 'Normal',
+    connectedDevices: 19,
 
-    dnsResponse: 'Normal',
-    gatewayConsistency: 'Stable',
+    averageTime: '24 min',
 
-    packetsAnalyzed: '12,480',
-    anomaliesDetected: 2,
-    threatsDetected: 0,
+    unusualActivity: 2,
 
-    encryption: selectedNetwork?.security || 'WPA2',
-    authentication:
-      selectedNetwork?.security === 'Open'
-        ? 'Open'
-        : 'Protected',
+    signalStrength: selectedNetwork?.signal || 92,
+
+    activityData: {
+      '10 min': [
+        { time: '2:21', devices: 14 },
+        { time: '2:23', devices: 16 },
+        { time: '2:25', devices: 15 },
+        { time: '2:27', devices: 18 },
+        { time: '2:29', devices: 17 },
+        { time: '2:30', devices: 19 },
+      ],
+
+      '30 min': [
+        { time: '2:00', devices: 8 },
+        { time: '2:05', devices: 11 },
+        { time: '2:10', devices: 14 },
+        { time: '2:15', devices: 12 },
+        { time: '2:20', devices: 17 },
+        { time: '2:25', devices: 15 },
+        { time: '2:30', devices: 19 },
+      ],
+
+      '1 hour': [
+        { time: '1:30', devices: 6 },
+        { time: '1:40', devices: 9 },
+        { time: '1:50', devices: 12 },
+        { time: '2:00', devices: 8 },
+        { time: '2:10', devices: 14 },
+        { time: '2:20', devices: 17 },
+        { time: '2:30', devices: 19 },
+      ],
+
+      '6 hours': [
+        { time: '8 AM', devices: 4 },
+        { time: '9 AM', devices: 7 },
+        { time: '10 AM', devices: 13 },
+        { time: '11 AM', devices: 18 },
+        { time: '12 PM', devices: 15 },
+        { time: '1 PM', devices: 21 },
+        { time: '2 PM', devices: 19 },
+      ],
+    },
 
     recentActivity: [
       {
-        time: 'Just now',
+        type: 'success',
         title: 'Network scan completed',
-        description:
-          'Network characteristics successfully collected.',
-        type: 'success',
-      },
-      {
-        time: '1 min ago',
-        title: 'DNS response verified',
-        description:
-          'DNS behavior is currently within the expected range.',
-        type: 'success',
-      },
-      {
+        description: 'No major security concerns were found.',
         time: '2 min ago',
-        title: 'Gateway consistency checked',
-        description:
-          'Gateway behavior appears stable.',
-        type: 'success',
       },
+
       {
-        time: '3 min ago',
-        title: 'Minor traffic anomaly detected',
-        description:
-          'Small deviation from the normal traffic baseline.',
+        type: 'success',
+        title: '19 devices connected',
+        description: 'The number of connected devices is within the normal range.',
+        time: '5 min ago',
+      },
+
+      {
         type: 'warning',
+        title: 'Unusual activity noticed',
+        description: 'A small change in network behavior was detected.',
+        time: '7 min ago',
+      },
+
+      {
+        type: 'success',
+        title: 'Network activity is stable',
+        description: 'No major interruptions were detected.',
+        time: '10 min ago',
       },
     ],
-
-    threats: [],
   };
 
-  // --------------------------------------------------
-  // If user directly opens dashboard without selecting
-  // a network, show a helpful state.
-  // --------------------------------------------------
+  /*
+   * =========================================================
+   * RISK STATUS
+   * =========================================================
+   */
+
+  const riskStatus = useMemo(() => {
+    const score = analysis.riskScore;
+
+    if (score <= 30) {
+      return {
+        title: 'SAFE TO CONNECT',
+        label: 'Low Risk',
+        message:
+          'This network currently shows low-risk behavior.',
+        icon: ShieldCheck,
+
+        container:
+          'border-emerald-400/30 bg-emerald-950/20',
+
+        iconBox:
+          'bg-emerald-400/10 text-emerald-400',
+
+        titleColor:
+          'text-emerald-400',
+
+        badge:
+          'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+
+        scoreColor:
+          'text-emerald-400',
+      };
+    }
+
+    if (score <= 70) {
+      return {
+        title: 'USE WITH CAUTION',
+        label: 'Moderate Risk',
+        message:
+          'Some unusual activity has been detected on this network.',
+        icon: ShieldAlert,
+
+        container:
+          'border-yellow-400/30 bg-yellow-950/20',
+
+        iconBox:
+          'bg-yellow-400/10 text-yellow-400',
+
+        titleColor:
+          'text-yellow-400',
+
+        badge:
+          'border-yellow-400/30 bg-yellow-400/10 text-yellow-300',
+
+        scoreColor:
+          'text-yellow-400',
+      };
+    }
+
+    return {
+      title: 'NOT RECOMMENDED',
+      label: 'High Risk',
+      message:
+        'Suspicious behavior has been detected. We recommend avoiding this network.',
+      icon: ShieldX,
+
+      container:
+        'border-red-400/30 bg-red-950/20',
+
+      iconBox:
+        'bg-red-400/10 text-red-400',
+
+      titleColor:
+        'text-red-400',
+
+      badge:
+        'border-red-400/30 bg-red-400/10 text-red-300',
+
+      scoreColor:
+        'text-red-400',
+    };
+  }, [analysis.riskScore]);
+
+  /*
+   * =========================================================
+   * NO NETWORK SELECTED
+   * =========================================================
+   */
 
   if (!selectedNetwork) {
     return (
-      <main className="min-h-screen bg-[#020611] px-5 py-10 text-white sm:px-8">
-        <div className="mx-auto flex min-h-[70vh] max-w-2xl flex-col items-center justify-center text-center">
+      <main className="min-h-screen bg-[#020611] px-6 py-10 text-white">
 
-          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-400">
+        <div className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center text-center">
+
+          <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-400">
             <Wifi size={38} />
           </div>
 
-          <h1 className="text-2xl font-bold">
+          <h1 className="mt-6 text-2xl font-bold">
             No Network Selected
           </h1>
 
-          <p className="mt-3 max-w-md text-sm leading-6 text-slate-500">
-            Select a Wi-Fi network from the scanner before viewing
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            Select a Wi-Fi network from the scanner to view
             its security analysis.
           </p>
 
           <button
-            type="button"
             onClick={() => navigate('/wifi-scan')}
-            className="mt-7 flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-fuchsia-500 px-6 py-3 text-sm font-semibold"
+            className="mt-7 flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-fuchsia-500 px-6 py-3 text-sm font-semibold transition hover:scale-[1.02]"
           >
             <Wifi size={17} />
             Scan Networks
           </button>
 
         </div>
+
       </main>
     );
   }
 
-  // --------------------------------------------------
-  // Helpers
-  // --------------------------------------------------
+  /*
+   * =========================================================
+   * CURRENT GRAPH DATA
+   * =========================================================
+   */
 
-  const isSafe = analysis.status === 'Safe';
+  const currentActivity =
+    analysis.activityData[timeRange];
 
-  const getActivityIcon = (type) => {
-    if (type === 'warning') {
-      return <AlertTriangle size={17} />;
-    }
+  const maxDevices = Math.max(
+    30,
+    ...currentActivity.map((item) => item.devices)
+  );
 
-    return <CheckCircle2 size={17} />;
-  };
+  const peakDevices = Math.max(
+    ...currentActivity.map((item) => item.devices)
+  );
+
+  /*
+   * =========================================================
+   * GRAPH DIMENSIONS
+   * =========================================================
+   */
+
+  const chartWidth = 900;
+  const chartHeight = 260;
+
+  const points = currentActivity
+    .map((item, index) => {
+
+      const x =
+        (index / (currentActivity.length - 1)) *
+        chartWidth;
+
+      const y =
+        chartHeight -
+        (item.devices / maxDevices) *
+          chartHeight;
+
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  /*
+   * =========================================================
+   * MAIN DASHBOARD
+   * =========================================================
+   */
 
   return (
-    <main className="min-h-screen bg-[#020611] px-5 py-8 text-white sm:px-8 lg:px-10">
+    <main className="min-h-screen bg-[#020611] px-5 py-7 text-white sm:px-8 lg:px-10">
 
       {/* Background glow */}
 
-      <div className="pointer-events-none fixed left-1/2 top-0 h-[500px] w-[700px] -translate-x-1/2 rounded-full bg-cyan-950/20 blur-[150px]" />
+      <div className="pointer-events-none fixed left-1/2 top-0 h-[450px] w-[700px] -translate-x-1/2 rounded-full bg-cyan-950/20 blur-[160px]" />
 
-      <div className="pointer-events-none fixed bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-purple-950/20 blur-[150px]" />
+      <div className="pointer-events-none fixed bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-purple-950/20 blur-[160px]" />
 
       <div className="relative z-10 mx-auto max-w-[1400px]">
 
-        {/* ==================================================
+        {/* =====================================================
             HEADER
-        ================================================== */}
+        ===================================================== */}
 
-        <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-7 flex flex-col gap-4 border-b border-slate-800/70 pb-5 sm:flex-row sm:items-center sm:justify-between">
 
-          <div>
+          <button
+            onClick={() => navigate('/wifi-scan')}
+            className="flex w-fit items-center gap-2 text-sm text-slate-500 transition hover:text-cyan-400"
+          >
+            <ArrowLeft size={16} />
+            Back to Wi-Fi Scan
+          </button>
 
-            <button
-              type="button"
-              onClick={() => navigate('/wifi-scan')}
-              className="mb-5 flex items-center gap-2 text-xs text-slate-500 transition hover:text-cyan-400"
-            >
-              <ArrowLeft size={14} />
-              Back to Wi-Fi Scan
-            </button>
+          <div className="flex items-center gap-3 text-xs text-slate-600">
 
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-400">
-              Security Monitoring
-            </p>
-
-            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-              Network Analysis
-            </h1>
-
-            <p className="mt-2 text-sm text-slate-500">
-              Behavioral security assessment of the selected Wi-Fi network.
-            </p>
-
-          </div>
-
-          {/* Monitoring indicator */}
-
-          <div className="flex w-fit items-center gap-3 rounded-xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-3">
-
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-400" />
+            <span>
+              Analysis updated 2 min ago
             </span>
 
-            <div>
-              <p className="text-xs font-semibold text-cyan-300">
-                Monitoring Active
-              </p>
-
-              <p className="text-[10px] text-slate-600">
-                Real-time analysis
-              </p>
-            </div>
+            <RefreshCw size={14} />
 
           </div>
 
         </div>
 
 
-        {/* ==================================================
+        {/* =====================================================
             SELECTED NETWORK
-        ================================================== */}
+        ===================================================== */}
 
-        <section className="mb-6 rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5 shadow-xl shadow-black/20 backdrop-blur-xl sm:p-6">
+        <section className="mb-6">
 
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
 
-            <div className="flex items-center gap-4">
-
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-cyan-400/25 bg-cyan-400/10 text-cyan-400">
-                <Wifi size={27} />
-              </div>
-
-              <div>
-
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                  Selected Network
-                </p>
-
-                <h2 className="mt-1 text-xl font-bold text-white">
-                  {selectedNetwork.name}
-                </h2>
-
-                <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-
-                  <span>
-                    {selectedNetwork.security}
-                  </span>
-
-                  <span>•</span>
-
-                  <span>
-                    {selectedNetwork.frequency}
-                  </span>
-
-                  <span>•</span>
-
-                  <span>
-                    Channel {selectedNetwork.channel}
-                  </span>
-
-                  <span>•</span>
-
-                  <span>
-                    Signal {selectedNetwork.signal}%
-                  </span>
-
-                </div>
-
-              </div>
-
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-400">
+              <Wifi size={32} />
             </div>
 
-            <div className="flex items-center gap-3 rounded-xl border border-cyan-400/15 bg-cyan-400/5 px-4 py-3">
+            <div className="min-w-0">
 
-              <Radio size={19} className="text-cyan-400" />
+              <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">
+                {selectedNetwork.name}
+              </h1>
 
-              <div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500 sm:text-sm">
 
-                <p className="text-[10px] uppercase tracking-wider text-slate-600">
-                  Scan Status
-                </p>
+                <span>
+                  {selectedNetwork.type || 'Wi-Fi Network'}
+                </span>
 
-                <p className="text-sm font-semibold text-cyan-300">
-                  Analysis Complete
-                </p>
+                <span>•</span>
+
+                <span>
+                  {selectedNetwork.frequency || '2.4 GHz'}
+                </span>
+
+                <span>•</span>
+
+                <span>
+                  Channel {selectedNetwork.channel || '—'}
+                </span>
+
+                <span>•</span>
+
+                <span>
+                  {selectedNetwork.security || 'Unknown Security'}
+                </span>
 
               </div>
 
@@ -278,229 +413,116 @@ function NetworkAnalysis() {
         </section>
 
 
-        {/* ==================================================
-            TRUST SCORE + QUICK METRICS
-        ================================================== */}
+        {/* =====================================================
+            RISK STATUS - FIRST THING USER SEES
+        ===================================================== */}
 
-        <section className="mb-6 grid gap-5 lg:grid-cols-[1.1fr_2fr]">
+        <section
+          className={`mb-6 overflow-hidden rounded-2xl border ${riskStatus.container}`}
+        >
 
-          {/* Trust Score */}
+          <div className="p-6 sm:p-7">
 
-          <div className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-6 backdrop-blur-xl">
+            <div className="flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-between">
 
-            <div className="flex items-center justify-between">
+              {/* Status */}
 
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-400">
-                  Current Trust Score
-                </p>
+              <div className="flex items-center gap-5">
 
-                <h2 className="mt-2 text-lg font-semibold text-white">
-                  Network Safety
-                </h2>
-              </div>
+                <div
+                  className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full ${riskStatus.iconBox}`}
+                >
+                  <riskStatus.icon size={46} />
+                </div>
 
-              <ShieldCheck
-                size={24}
-                className="text-cyan-400"
-              />
+                <div>
 
-            </div>
+                  <div className="flex flex-wrap items-center gap-3">
 
-            <div className="mt-8 flex items-center justify-center">
+                    <h2
+                      className={`text-2xl font-bold sm:text-3xl ${riskStatus.titleColor}`}
+                    >
+                      {riskStatus.title}
+                    </h2>
 
-              <div className="relative flex h-48 w-48 items-center justify-center rounded-full border-[14px] border-cyan-400/15">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-xs font-medium ${riskStatus.badge}`}
+                    >
+                      {riskStatus.label}
+                    </span>
 
-                <div className="absolute inset-[-14px] rounded-full border-[14px] border-transparent border-t-cyan-400 border-r-cyan-400 rotate-[35deg]" />
+                  </div>
 
-                <div className="text-center">
-
-                  <p className="text-5xl font-bold text-cyan-400">
-                    {analysis.trustScore}
-                  </p>
-
-                  <p className="mt-1 text-xs uppercase tracking-widest text-slate-600">
-                    / 100
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-slate-400">
+                    {riskStatus.message}
                   </p>
 
                 </div>
 
               </div>
 
-            </div>
 
-            <div className="mt-6 text-center">
+              {/* Risk Score */}
 
-              <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300">
+              <div className="border-t border-slate-800/70 pt-5 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
 
-                <CheckCircle2 size={16} />
+                <p className="text-sm font-medium text-slate-400">
+                  Risk Score
+                </p>
 
-                {analysis.status}
+                <div className="mt-1 flex items-baseline gap-1">
 
-              </span>
+                  <span
+                    className={`text-5xl font-bold ${riskStatus.scoreColor}`}
+                  >
+                    {analysis.riskScore}
+                  </span>
 
-              <p className="mx-auto mt-3 max-w-xs text-xs leading-5 text-slate-600">
-                Network behavior currently appears trustworthy.
-              </p>
+                  <span className="text-xl text-slate-500">
+                    /100
+                  </span>
 
-            </div>
+                </div>
 
-          </div>
-
-
-          {/* Quick metrics */}
-
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-
-            <MetricCard
-              icon={<Activity size={19} />}
-              label="Latency"
-              value={analysis.latency}
-              description="Gateway response"
-            />
-
-            <MetricCard
-              icon={<Radio size={19} />}
-              label="Packet Rate"
-              value={analysis.packetRate}
-              description="Current traffic"
-            />
-
-            <MetricCard
-              icon={<Gauge size={19} />}
-              label="Traffic"
-              value={analysis.trafficDensity}
-              description="Traffic density"
-            />
-
-            <MetricCard
-              icon={<Network size={19} />}
-              label="Connections"
-              value={analysis.connectionFrequency}
-              description="Behavior pattern"
-            />
-
-          </div>
-
-        </section>
-
-
-        {/* ==================================================
-            NETWORK DETAILS + CONNECTION ANALYSIS
-        ================================================== */}
-
-        <section className="mb-6 grid gap-5 lg:grid-cols-2">
-
-          {/* Network Details */}
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
-
-            <div className="mb-5 flex items-center gap-3">
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-400">
-                <Server size={19} />
-              </div>
-
-              <div>
-
-                <h2 className="font-semibold text-white">
-                  Network Details
-                </h2>
-
-                <p className="text-xs text-slate-600">
-                  Basic network characteristics
+                <p className="mt-1 text-xs text-slate-600">
+                  Lower score means lower risk
                 </p>
 
               </div>
 
             </div>
 
-            <div className="grid grid-cols-2 gap-x-6 gap-y-5">
 
-              <DetailItem
-                label="SSID"
-                value={selectedNetwork.name}
-              />
+            {/* Risk scale */}
 
-              <DetailItem
-                label="Signal Strength"
-                value={`${selectedNetwork.signal}%`}
-              />
+            <div className="mt-8">
 
-              <DetailItem
-                label="Security"
-                value={analysis.encryption}
-              />
+              <div className="relative h-2 rounded-full bg-gradient-to-r from-emerald-400 via-yellow-400 to-red-500">
 
-              <DetailItem
-                label="Authentication"
-                value={analysis.authentication}
-              />
-
-              <DetailItem
-                label="Frequency"
-                value={selectedNetwork.frequency}
-              />
-
-              <DetailItem
-                label="Channel"
-                value={selectedNetwork.channel}
-              />
-
-            </div>
-
-          </div>
-
-
-          {/* Connection Analysis */}
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
-
-            <div className="mb-5 flex items-center gap-3">
-
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-400/10 text-purple-400">
-                <Activity size={19} />
-              </div>
-
-              <div>
-
-                <h2 className="font-semibold text-white">
-                  Connection Analysis
-                </h2>
-
-                <p className="text-xs text-slate-600">
-                  Behavioral network signals
-                </p>
+                <div
+                  className="absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border-4 border-white bg-slate-900 shadow-lg transition-all duration-500"
+                  style={{
+                    left: `${analysis.riskScore}%`,
+                  }}
+                />
 
               </div>
 
-            </div>
+              <div className="mt-3 grid grid-cols-3 text-[10px] font-medium sm:text-xs">
 
-            <div className="space-y-4">
+                <span className="text-emerald-400">
+                  0–30 Safe
+                </span>
 
-              <AnalysisRow
-                label="DNS Response"
-                value={analysis.dnsResponse}
-                positive
-              />
+                <span className="text-center text-yellow-400">
+                  31–70 Suspicious
+                </span>
 
-              <AnalysisRow
-                label="Gateway Consistency"
-                value={analysis.gatewayConsistency}
-                positive
-              />
+                <span className="text-right text-red-400">
+                  71–100 Dangerous
+                </span>
 
-              <AnalysisRow
-                label="Traffic Density"
-                value={analysis.trafficDensity}
-                positive
-              />
-
-              <AnalysisRow
-                label="Connection Frequency"
-                value={analysis.connectionFrequency}
-                positive
-              />
+              </div>
 
             </div>
 
@@ -509,277 +531,490 @@ function NetworkAnalysis() {
         </section>
 
 
-        {/* ==================================================
-            BEHAVIORAL ANALYSIS GRAPH
-        ================================================== */}
+        {/* =====================================================
+            QUICK METRICS
+        ===================================================== */}
 
-        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
+        <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <MetricCard
+            icon={<Users size={24} />}
+            iconClass="bg-blue-400/10 text-blue-400"
+            title="Connected Devices"
+            value={analysis.connectedDevices}
+            description="devices currently using this Wi-Fi"
+          />
+
+          <MetricCard
+            icon={<Clock3 size={24} />}
+            iconClass="bg-purple-400/10 text-purple-400"
+            title="Average Time Connected"
+            value={analysis.averageTime}
+            description="average connection duration"
+          />
+
+          <MetricCard
+            icon={<AlertTriangle size={24} />}
+            iconClass="bg-yellow-400/10 text-yellow-400"
+            title="Unusual Activity"
+            value={analysis.unusualActivity}
+            description="unusual events recently detected"
+          />
+
+          <MetricCard
+            icon={<Signal size={24} />}
+            iconClass="bg-emerald-400/10 text-emerald-400"
+            title="Signal Strength"
+            value={`${analysis.signalStrength}%`}
+            description="current Wi-Fi signal"
+          />
+
+        </section>
+
+
+        {/* =====================================================
+            DEVICE ACTIVITY GRAPH
+        ===================================================== */}
+
+        <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-950/70 p-5 backdrop-blur-xl sm:p-6">
+
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
             <div>
 
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-400">
-                Behavioral Analysis
-              </p>
+              <div className="flex items-center gap-2">
 
-              <h2 className="mt-1 text-lg font-semibold text-white">
-                Network Activity Pattern
-              </h2>
+                <Users
+                  size={19}
+                  className="text-cyan-400"
+                />
 
-              <p className="mt-1 text-xs text-slate-600">
-                Observed traffic behavior compared with expected activity.
+                <h2 className="text-lg font-semibold">
+                  Device Activity Over Time
+                </h2>
+
+              </div>
+
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                See how many devices are using this Wi-Fi over time.
               </p>
 
             </div>
 
-            <div className="flex items-center gap-4 text-[10px] text-slate-600">
 
-              <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-cyan-400" />
-                Normal
-              </span>
+            {/* Time range */}
 
-              <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-fuchsia-400" />
-                Anomaly
-              </span>
+            <div className="flex w-fit overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/50 p-1">
+
+              {[
+                '10 min',
+                '30 min',
+                '1 hour',
+                '6 hours',
+              ].map((range) => (
+
+                <button
+                  key={range}
+                  onClick={() => setTimeRange(range)}
+                  className={`whitespace-nowrap rounded-md px-3 py-2 text-xs transition ${
+                    timeRange === range
+                      ? 'bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white shadow-lg shadow-cyan-500/10'
+                      : 'text-slate-500 hover:text-white'
+                  }`}
+                >
+                  {range}
+                </button>
+
+              ))}
 
             </div>
 
           </div>
 
 
-          {/* Simple frontend chart */}
+          {/* Graph container */}
 
-          <div className="relative mt-8 h-64 overflow-hidden rounded-xl border border-slate-800 bg-black/20 p-5">
+          <div className="relative mt-8 h-[310px] overflow-hidden rounded-xl border border-slate-800 bg-[#030914] p-5">
 
             {/* Grid */}
 
-            <div className="absolute inset-0 flex flex-col justify-between p-5 opacity-30">
+            <div className="absolute inset-x-5 bottom-12 top-6 flex flex-col justify-between">
 
-              <span className="border-t border-slate-700" />
-              <span className="border-t border-slate-700" />
-              <span className="border-t border-slate-700" />
-              <span className="border-t border-slate-700" />
-              <span className="border-t border-slate-700" />
+              {[30, 20, 10, 0].map((number) => (
+
+                <div
+                  key={number}
+                  className="flex items-center gap-3"
+                >
+
+                  <span className="w-6 text-[10px] text-slate-700">
+                    {number}
+                  </span>
+
+                  <div className="h-px flex-1 border-t border-dashed border-slate-800" />
+
+                </div>
+
+              ))}
 
             </div>
 
 
             {/* SVG graph */}
 
-            <svg
-              className="relative h-full w-full"
-              viewBox="0 0 1000 240"
-              preserveAspectRatio="none"
-            >
+            <div className="absolute bottom-12 left-14 right-5 top-6">
 
-              <polyline
-                points="0,170 80,150 160,158 240,130 320,145 400,110 480,120 560,92 640,105 720,75 800,95 880,65 1000,80"
-                fill="none"
-                stroke="rgb(34,211,238)"
-                strokeWidth="4"
-              />
+              <svg
+                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                preserveAspectRatio="none"
+                className="h-full w-full overflow-visible"
+              >
 
-              <polyline
-                points="0,185 80,175 160,180 240,168 320,175 400,155 480,162 560,145 640,150 720,135 800,145 880,120 1000,130"
-                fill="none"
-                stroke="rgba(232,121,249,0.35)"
-                strokeWidth="3"
-                strokeDasharray="8 8"
-              />
+                {/* Area */}
 
-            </svg>
+                <polygon
+                  points={`0,${chartHeight} ${points} ${chartWidth},${chartHeight}`}
+                  fill="rgba(34,211,238,0.06)"
+                />
 
-            <div className="absolute bottom-2 left-5 right-5 flex justify-between text-[9px] text-slate-700">
+                {/* Main line */}
 
-              <span>10 min ago</span>
-              <span>8 min</span>
-              <span>6 min</span>
-              <span>4 min</span>
-              <span>2 min</span>
-              <span>Now</span>
+                <polyline
+                  points={points}
+                  fill="none"
+                  stroke="rgb(34,211,238)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+
+                {/* Data points */}
+
+                {currentActivity.map((item, index) => {
+
+                  const x =
+                    (index / (currentActivity.length - 1)) *
+                    chartWidth;
+
+                  const y =
+                    chartHeight -
+                    (item.devices / maxDevices) *
+                      chartHeight;
+
+                  return (
+                    <g key={`${item.time}-${index}`}>
+
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="11"
+                        fill="rgba(34,211,238,0.08)"
+                      />
+
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="5"
+                        fill="#020611"
+                        stroke="rgb(34,211,238)"
+                        strokeWidth="3"
+                      />
+
+                    </g>
+                  );
+                })}
+
+              </svg>
+
+
+              {/* Data labels */}
+
+              <div className="absolute -bottom-7 left-0 right-0 flex justify-between">
+
+                {currentActivity.map((item) => (
+
+                  <span
+                    key={item.time}
+                    className="text-[9px] text-slate-600"
+                  >
+                    {item.time}
+                  </span>
+
+                ))}
+
+              </div>
+
+
+              {/* Device count labels */}
+
+              <div className="absolute left-0 right-0 top-0 flex justify-between">
+
+                {currentActivity.map((item, index) => (
+
+                  <span
+                    key={`${item.time}-label-${index}`}
+                    className="rounded-md bg-slate-900/90 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300"
+                  >
+                    {item.devices}
+                  </span>
+
+                ))}
+
+              </div>
 
             </div>
 
           </div>
 
-        </section>
 
+          {/* Graph summary */}
 
-        {/* ==================================================
-            THREAT DETECTION + STATISTICS
-        ================================================== */}
+          <div className="mt-5 flex flex-col gap-3 text-xs sm:flex-row sm:items-center sm:justify-between">
 
-        <section className="mb-6 grid gap-5 lg:grid-cols-[1.4fr_0.8fr]">
+            <div className="flex items-center gap-2 text-slate-500">
 
-          {/* Threat Detection */}
+              <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
+              Connected devices
 
-            <div className="mb-5 flex items-center justify-between">
+            </div>
 
-              <div className="flex items-center gap-3">
+            <div className="flex flex-wrap gap-5 text-slate-500">
 
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-400">
-                  <ShieldCheck size={19} />
-                </div>
+              <span>
+                Now:{' '}
+                <strong className="text-slate-300">
+                  {analysis.connectedDevices}
+                </strong>
+              </span>
 
-                <div>
+              <span>
+                Peak:{' '}
+                <strong className="text-slate-300">
+                  {peakDevices}
+                </strong>
+              </span>
 
-                  <h2 className="font-semibold text-white">
-                    Threat Detection
-                  </h2>
-
-                  <p className="text-xs text-slate-600">
-                    Machine-learning security assessment
-                  </p>
-
-                </div>
-
-              </div>
-
-              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-semibold text-cyan-300">
-                No Active Threats
+              <span>
+                Period:{' '}
+                <strong className="text-slate-300">
+                  {timeRange}
+                </strong>
               </span>
 
             </div>
 
-
-            <div className="rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-5">
-
-              <div className="flex items-start gap-4">
-
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-400/10 text-cyan-400">
-                  <CheckCircle2 size={20} />
-                </div>
-
-                <div>
-
-                  <h3 className="text-sm font-semibold text-cyan-300">
-                    Network behavior appears normal
-                  </h3>
-
-                  <p className="mt-1 text-xs leading-5 text-slate-600">
-                    No active threat indicators have been detected
-                    in the current analysis window.
-                  </p>
-
-                </div>
-
-              </div>
-
-            </div>
-
           </div>
 
+        </section>
 
-          {/* Statistics */}
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
+        {/* =====================================================
+            INFORMATION CARDS
+        ===================================================== */}
 
-            <h2 className="font-semibold text-white">
-              Analysis Statistics
-            </h2>
+        <section className="mb-6 grid gap-5 lg:grid-cols-3">
+
+          {/* Network Details */}
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
+
+            <SectionHeader
+              icon={<Server size={18} />}
+              title="Network Details"
+            />
 
             <div className="mt-5 space-y-4">
 
-              <StatItem
-                label="Packets Analyzed"
-                value={analysis.packetsAnalyzed}
+              <InfoRow
+                icon={<LockKeyhole size={16} />}
+                label="Security"
+                value={
+                  selectedNetwork.security ||
+                  'Unknown'
+                }
               />
 
-              <StatItem
-                label="Anomalies Detected"
-                value={analysis.anomaliesDetected}
+              <InfoRow
+                icon={<Wifi size={16} />}
+                label="Frequency"
+                value={
+                  selectedNetwork.frequency ||
+                  '2.4 GHz'
+                }
               />
 
-              <StatItem
-                label="Threats Detected"
-                value={analysis.threatsDetected}
+              <InfoRow
+                icon={<Radio size={16} />}
+                label="Channel"
+                value={
+                  selectedNetwork.channel ||
+                  '—'
+                }
+              />
+
+              <InfoRow
+                icon={<Signal size={16} />}
+                label="Signal"
+                value={`${analysis.signalStrength}%`}
+                highlight
               />
 
             </div>
 
           </div>
 
-        </section>
 
+          {/* Recent Activity */}
 
-        {/* ==================================================
-            RECENT ACTIVITY
-        ================================================== */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-6">
 
-        <section className="rounded-2xl border border-slate-800 bg-slate-950/60 p-6 backdrop-blur-xl">
+            <SectionHeader
+              icon={<Activity size={18} />}
+              title="Recent Activity"
+            />
 
-          <div className="mb-6 flex items-center gap-3">
+            <div className="mt-5 space-y-4">
 
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-400/10 text-blue-400">
-              <Clock3 size={19} />
-            </div>
+              {analysis.recentActivity.map(
+                (item, index) => (
 
-            <div>
+                  <div
+                    key={index}
+                    className="flex gap-3 border-b border-slate-800/60 pb-4 last:border-0"
+                  >
 
-              <h2 className="font-semibold text-white">
-                Recent Activity
-              </h2>
+                    <div
+                      className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                        item.type === 'warning'
+                          ? 'bg-yellow-400/10 text-yellow-400'
+                          : 'bg-emerald-400/10 text-emerald-400'
+                      }`}
+                    >
 
-              <p className="text-xs text-slate-600">
-                Latest network analysis events
-              </p>
+                      {item.type === 'warning' ? (
+                        <AlertTriangle size={14} />
+                      ) : (
+                        <CheckCircle2 size={14} />
+                      )}
 
-            </div>
+                    </div>
 
-          </div>
+                    <div className="min-w-0 flex-1">
 
+                      <div className="flex justify-between gap-2">
 
-          <div className="space-y-4">
+                        <p className="text-xs font-medium text-slate-300">
+                          {item.title}
+                        </p>
 
-            {analysis.recentActivity.map((item, index) => (
+                        <span className="shrink-0 text-[9px] text-slate-700">
+                          {item.time}
+                        </span>
 
-              <div
-                key={index}
-                className="flex gap-4 rounded-xl border border-slate-800/70 bg-slate-900/20 p-4"
-              >
+                      </div>
 
-                <div
-                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                    item.type === 'warning'
-                      ? 'bg-yellow-400/10 text-yellow-400'
-                      : 'bg-cyan-400/10 text-cyan-400'
-                  }`}
-                >
-                  {getActivityIcon(item.type)}
-                </div>
+                      <p className="mt-1 text-[10px] leading-4 text-slate-600">
+                        {item.description}
+                      </p>
 
-                <div className="min-w-0 flex-1">
-
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-
-                    <h3 className="text-sm font-medium text-slate-300">
-                      {item.title}
-                    </h3>
-
-                    <span className="text-[10px] text-slate-700">
-                      {item.time}
-                    </span>
+                    </div>
 
                   </div>
 
-                  <p className="mt-1 text-xs leading-5 text-slate-600">
-                    {item.description}
-                  </p>
+                )
+              )}
 
-                </div>
+            </div>
 
-              </div>
+            <button className="mt-2 flex items-center gap-2 text-xs font-medium text-cyan-400 transition hover:text-cyan-300">
+              View full activity log
+              <ChevronRight size={14} />
+            </button>
 
-            ))}
+          </div>
+
+
+          {/* Why this network is safe */}
+
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-950/10 p-6">
+
+            <SectionHeader
+              icon={<ShieldCheck size={18} />}
+              title={
+                analysis.riskScore <= 30
+                  ? 'Why this network is safe'
+                  : 'Why this network needs attention'
+              }
+              green={analysis.riskScore <= 30}
+            />
+
+            <div className="mt-5 space-y-4">
+
+              {analysis.riskScore <= 30 ? (
+                <>
+                  <Reason text="The number of connected devices is currently within a normal range." />
+
+                  <Reason text="Average connection duration appears normal." />
+
+                  <Reason text="Only a small amount of unusual activity has been detected." />
+
+                  <Reason
+                    text={`The network uses ${selectedNetwork.security || 'a secured configuration'}.`}
+                  />
+                </>
+              ) : analysis.riskScore <= 70 ? (
+                <>
+                  <Reason
+                    text="Some unusual network behavior has been detected."
+                  />
+
+                  <Reason
+                    text="The network should be monitored more closely."
+                  />
+
+                  <Reason
+                    text="Avoid performing highly sensitive activities until the risk decreases."
+                  />
+                </>
+              ) : (
+                <>
+                  <Reason
+                    text="Suspicious network behavior has been detected."
+                  />
+
+                  <Reason
+                    text="The current risk level is high."
+                  />
+
+                  <Reason
+                    text="Avoid using this network for sensitive activities."
+                  />
+                </>
+              )}
+
+            </div>
+
+            <button className="mt-5 flex items-center gap-2 text-xs font-medium text-cyan-400 transition hover:text-cyan-300">
+              Learn more
+              <ChevronRight size={14} />
+            </button>
 
           </div>
 
         </section>
+        {/* =====================================================
+            FOOTER NOTE
+        ===================================================== */}
+
+        <div className="flex items-center justify-center gap-2 pb-5 text-[10px] text-slate-700">
+
+          <ShieldCheck size={13} />
+
+          Risk assessment is based on the current behavior of this network
+          and may change over time.
+
+        </div>
 
       </div>
 
@@ -788,27 +1023,37 @@ function NetworkAnalysis() {
 }
 
 
-// ======================================================
-// SMALL COMPONENTS
-// ======================================================
+/*
+============================================================
+METRIC CARD
+============================================================
+*/
 
-function MetricCard({ icon, label, value, description }) {
+function MetricCard({
+  icon,
+  iconClass,
+  title,
+  value,
+  description,
+}) {
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 backdrop-blur-xl">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-5 backdrop-blur-xl transition hover:border-slate-700">
 
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-400">
+      <div
+        className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconClass}`}
+      >
         {icon}
       </div>
 
-      <p className="mt-5 text-xs text-slate-600">
-        {label}
+      <p className="mt-5 text-xs font-medium text-slate-500">
+        {title}
       </p>
 
-      <p className="mt-1 text-lg font-bold text-slate-200">
+      <p className="mt-1 text-2xl font-bold text-white">
         {value}
       </p>
 
-      <p className="mt-1 text-[10px] text-slate-700">
+      <p className="mt-1 text-[10px] leading-4 text-slate-600">
         {description}
       </p>
 
@@ -817,68 +1062,104 @@ function MetricCard({ icon, label, value, description }) {
 }
 
 
-function DetailItem({ label, value }) {
+/*
+============================================================
+SECTION HEADER
+============================================================
+*/
+
+function SectionHeader({
+  icon,
+  title,
+  green = false,
+}) {
   return (
-    <div>
+    <div className="flex items-center gap-3">
 
-      <p className="text-[10px] uppercase tracking-wider text-slate-600">
-        {label}
-      </p>
-
-      <p className="mt-1 truncate text-sm font-medium text-slate-300">
-        {value}
-      </p>
-
-    </div>
-  );
-}
-
-
-function AnalysisRow({ label, value, positive }) {
-  return (
-    <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
-
-      <span className="text-xs text-slate-500">
-        {label}
-      </span>
-
-      <span
-        className={`flex items-center gap-2 text-xs font-medium ${
-          positive
-            ? 'text-cyan-300'
-            : 'text-yellow-300'
+      <div
+        className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+          green
+            ? 'bg-emerald-400/10 text-emerald-400'
+            : 'bg-cyan-400/10 text-cyan-400'
         }`}
       >
+        {icon}
+      </div>
 
-        {positive ? (
-          <CheckCircle2 size={14} />
-        ) : (
-          <AlertTriangle size={14} />
-        )}
-
-        {value}
-
-      </span>
+      <h2 className="font-semibold text-white">
+        {title}
+      </h2>
 
     </div>
   );
 }
 
 
-function StatItem({ label, value }) {
+/*
+============================================================
+INFO ROW
+============================================================
+*/
+
+function InfoRow({
+  icon,
+  label,
+  value,
+  highlight = false,
+}) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/20 px-4 py-3">
+    <div className="flex items-center justify-between border-b border-slate-800/60 pb-3 last:border-0">
 
-      <span className="text-xs text-slate-500">
-        {label}
-      </span>
+      <div className="flex items-center gap-3">
 
-      <span className="text-sm font-bold text-cyan-300">
+        <span className="text-slate-600">
+          {icon}
+        </span>
+
+        <span className="text-xs text-slate-500">
+          {label}
+        </span>
+
+      </div>
+
+      <span
+        className={`text-xs font-medium ${
+          highlight
+            ? 'text-emerald-400'
+            : 'text-slate-300'
+        }`}
+      >
         {value}
       </span>
 
     </div>
   );
 }
+
+
+/*
+============================================================
+REASON
+============================================================
+*/
+
+function Reason({ text }) {
+  return (
+    <div className="flex items-start gap-3">
+
+      <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/10 text-emerald-400">
+
+        <CheckCircle2 size={13} />
+
+      </div>
+
+      <p className="text-xs leading-5 text-slate-400">
+        {text}
+      </p>
+
+    </div>
+  );
+}
+
 
 export default NetworkAnalysis;
