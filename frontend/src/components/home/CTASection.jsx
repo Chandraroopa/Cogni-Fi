@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import cognifiLogo from '../../assets/cognifi-logo.png';
 
 function CTASection() {
   const { isAuthenticated } = useAuth();
@@ -14,8 +15,8 @@ function CTASection() {
 
         <div className="relative z-10 flex flex-col items-start justify-between gap-7 md:flex-row md:items-center">
           <div className="flex items-start gap-4">
-            <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-400 sm:flex">
-              <ShieldCheck size={21} />
+            <div className="hidden h-15 w-30 shrink-0 items-center justify-center sm:flex">
+              <img src={cognifiLogo} alt="Icon" />
             </div>
 
             <div>

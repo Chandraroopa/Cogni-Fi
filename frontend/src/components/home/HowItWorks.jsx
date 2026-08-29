@@ -55,10 +55,11 @@ function HowItWorks() {
       <div className="absolute right-0 top-1/3 h-72 w-72 rounded-full bg-cyan-400/5 blur-[120px]" />
 
       <div className="relative z-10 mx-auto max-w-[1200px]">
-        <div className="max-w-2xl text-center">
-          <span className="text-xs font-medium tracking-[0.2em] text-cyan-400">
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="mb-7 inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/5 px-4 py-2 text-sm font-medium tracking-[0.15em] text-cyan-300">
             HOW COGNIFI WORKS
-          </span>
+          </div>
+          
 
           <h2 className="mt-4 text-3xl font-semibold tracking-tight text-white md:text-5xl">
             From network signals to
