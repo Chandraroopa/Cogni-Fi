@@ -24,15 +24,9 @@ function App() {
 
           <Routes>
             <Route path="/" element={<Home />} />
-
             <Route path="/login" element={<Login />} />
-
             <Route path="/signup" element={<SignUp />} />
 
-<<<<<<< HEAD
-           // Change it to this:
-<Route path="/dashboard" element={<Dashboard />} />
-=======
             <Route
               path="/dashboard"
               element={
@@ -61,7 +55,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
->>>>>>> 97d4a63cd42c9ed0e0b48932c88bf1f975afecda
           </Routes>
 
         </div>

@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "timestamp": "2026-08-29 10:15:22",
+    "src_ip": "192.168.1.15",
+    "dst_ip": "142.250.190.46",
+    "protocol": "HTTPS",
+    "length": 540,
+    "security": "WPA2",
+    "risk_level": "Low",
+    "flags": []
+  },
+  {
+    "id": 2,
+    "timestamp": "2026-08-29 10:15:25",
+    "src_ip": "45.33.32.156",
+    "dst_ip": "192.168.1.15",
+    "protocol": "HTTP",
+    "length": 1420,
+    "security": "Open",
+    "risk_level": "High",
+    "flags": ["Unencrypted HTTP Traffic", "External Source IP Connection"]
+  },
+  {
+    "id": 3,
+    "timestamp": "2026-08-29 10:15:28",
+    "src_ip": "192.168.1.50",
+    "dst_ip": "10.0.0.1",
+    "protocol": "DNS",
+    "length": 128,
+    "security": "WPA2",
+    "risk_level": "Low",
+    "flags": []
+  },
+  {
+    "id": 4,
+    "timestamp": "2026-08-29 10:15:30",
+    "src_ip": "198.51.100.42",
+    "dst_ip": "192.168.1.15",
+    "protocol": "TCP",
+    "length": 1500,
+    "security": "Open",
+    "risk_level": "Medium",
+    "flags": ["Large Packet Size", "External Source IP Connection"]
+  }
+]
