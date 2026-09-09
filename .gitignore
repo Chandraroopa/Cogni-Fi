@@ -7,3 +7,25 @@ frontend/node_modules/
 venv/
 __pycache__/
 .env
+# Cognifi ML datasets and training artifacts
+*.zip
+*.pcap
+*.pcapng
+*.parquet
+
+# Generated feature datasets / matrices
+cognifi_features/
+cognifi_features_v2/
+cognifi_v8_behavior_features_trainval_corrected/
+cognifi_v10_flow_features_trainval/
+v1_matrices/
+v2_matrices/
+v3_behavior_features_trainval/
+final_test_matrix/
+
+# Colab / notebook generated data
+feature_selection/aligned_development/*.csv
+
+# Python / ML cache
+*.pkl
+.ipynb_checkpoints/
