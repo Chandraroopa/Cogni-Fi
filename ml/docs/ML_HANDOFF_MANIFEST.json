@@ -1,0 +1,43 @@
+{
+  "project": "CogniFi",
+  "package": "Final ML Inference Package",
+  "status": "FINAL_FROZEN",
+  "binary": {
+    "model": "binary_model.joblib",
+    "features": 82,
+    "schema": "binary_feature_schema.json",
+    "medians": "binary_train_medians.joblib",
+    "threshold": "binary_threshold.json",
+    "threshold_value": 0.09,
+    "output": "Normal / Threat"
+  },
+  "multiclass": {
+    "model": "multiclass_model.joblib",
+    "features": 81,
+    "schema": "multiclass_feature_schema.json",
+    "label_mapping": "multiclass_label_mapping.json",
+    "classes": 14,
+    "output": "Predicted attack category + probabilities"
+  },
+  "shared": {
+    "output_contract": "model_output_schema.json"
+  },
+  "integration_flow": [
+    "Packet capture",
+    "Feature extraction",
+    "Feature window construction",
+    "Binary threat detection",
+    "Multiclass classification",
+    "Trust and Risk Engine",
+    "Frontend dashboard"
+  ],
+  "important_rules": [
+    "Do not change feature order.",
+    "Do not retrain the frozen models.",
+    "Do not use frame.time_epoch for binary inference.",
+    "Do not use the binary threshold for multiclass classification.",
+    "Binary is responsible for Normal vs Threat.",
+    "Multiclass is responsible for attack category.",
+    "Do not infer an attack type from binary is_threat alone."
+  ]
+}

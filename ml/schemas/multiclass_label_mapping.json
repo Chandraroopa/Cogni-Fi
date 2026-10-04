@@ -1,0 +1,50 @@
+{
+  "label_to_id": {
+    "Normal": 0,
+    "(Re)Assoc": 1,
+    "Botnet": 2,
+    "Deauth": 3,
+    "Disas": 4,
+    "Evil_Twin": 5,
+    "Kr00k": 6,
+    "Krack": 7,
+    "Malware": 8,
+    "RogueAP": 9,
+    "SQL_Injection": 10,
+    "SSDP": 11,
+    "SSH": 12,
+    "Website_spoofing": 13
+  },
+  "id_to_label": {
+    "0": "Normal",
+    "1": "(Re)Assoc",
+    "2": "Botnet",
+    "3": "Deauth",
+    "4": "Disas",
+    "5": "Evil_Twin",
+    "6": "Kr00k",
+    "7": "Krack",
+    "8": "Malware",
+    "9": "RogueAP",
+    "10": "SQL_Injection",
+    "11": "SSDP",
+    "12": "SSH",
+    "13": "Website_spoofing"
+  },
+  "classes": [
+    "Normal",
+    "(Re)Assoc",
+    "Botnet",
+    "Deauth",
+    "Disas",
+    "Evil_Twin",
+    "Kr00k",
+    "Krack",
+    "Malware",
+    "RogueAP",
+    "SQL_Injection",
+    "SSDP",
+    "SSH",
+    "Website_spoofing"
+  ]
+}
