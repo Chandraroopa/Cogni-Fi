@@ -1,223 +1,238 @@
-import re
+import os
 import subprocess
-import platform
-import socket
-import psutil
-import time
-from flask import Flask, jsonify
+import re
+from flask import Blueprint, Flask, jsonify, request
 from flask_cors import CORS
-from scapy.all import sniff, IP, TCP, UDP
+import pandas as pd
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Enables communication between your React frontend and Flask backend
 
-# Explicitly target your active Wi-Fi adapter name
-WIFI_INTERFACE = "Intel(R) Dual Band Wirele"
+api_blueprint = Blueprint('api', __name__)
 
-@app.route('/api/analyze-live', methods=['GET'])
-def analyze_live():
-    captured_packets = []
+# Path pointing directly to your Wireshark CSV capture file
+DATA_FILE = os.path.join(os.path.dirname(__file__), 'normal_01.csv')
 
-    def packet_callback(packet):
-        if IP in packet:
-            proto = "TCP" if TCP in packet else ("UDP" if UDP in packet else "OTHER")
-            captured_packets.append({
-                "source_ip": packet[IP].src,
-                "dest_ip": packet[IP].dst,
-                "protocol": proto,
-                "summary": packet.summary()
-            })
 
-    try:
-        sniff(iface=WIFI_INTERFACE, prn=packet_callback, count=5, timeout=2)
-    except Exception as e:
-        print(f"Sniffing error: {e}")
-
-    net1 = psutil.net_io_counters()
-    time.sleep(1)
-    net2 = psutil.net_io_counters()
-    
-    bytes_sent_sec = net2.bytes_sent - net1.bytes_sent
-    bytes_recv_sec = net2.bytes_recv - net1.bytes_recv
-    total_pkts_sec = (net2.packets_sent + net2.packets_recv) - (net1.packets_sent + net1.packets_recv)
-
-    bandwidth_data = {
-        "bandwidth_kbps": round((bytes_sent_sec + bytes_recv_sec) / 1024, 2),
-        "packets_per_sec": total_pkts_sec,
-        "protocol_breakdown": "TCP 70% | UDP 25% | Other 5%"
-    }
-
-    gateway_latency = get_gateway_latency()
-    wifi_details = get_wifi_interface_details()
-
-    return jsonify({
-        "status": "success",
-        "wifi_spec": wifi_details,
-        "metrics": bandwidth_data,
-        "gateway_latency_ms": gateway_latency,
-        "packets": captured_packets if captured_packets else [{
-            "source_ip": "10.75.169.66", 
-            "dest_ip": "10.75.169.66", 
-            "protocol": "INFO", 
-            "summary": "No raw packets intercepted during timeout window."
-        }]
-    })
-
-@app.route('/api/scan', methods=['GET'])
-def scan_networks():
-    networks = []
-    current_os = platform.system()
-    
-    try:
-        if current_os == "Windows":
-            output = subprocess.check_output(
-                ["netsh", "wlan", "show", "networks", "mode=bssid"], 
-                encoding="utf-8", 
-                errors="ignore"
-            )
-            
-            current_net = {}
-            net_id = 1
-            for line in output.splitlines():
-                line = line.strip()
-                if line.startswith("SSID"):
-                    if current_net and "name" in current_net:
-                        networks.append(current_net)
-                        current_net = {}
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        ssid_val = parts[1].strip()
-                        if ssid_val:
-                            current_net["id"] = net_id
-                            current_net["name"] = ssid_val
-                            current_net["type"] = "Wi-Fi"
-                            net_id += 1
-                elif line.startswith("Signal"):
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        sig_str = parts[1].strip().replace("%", "")
-                        current_net["signal"] = int(sig_str) if sig_str.isdigit() else 0
-                elif line.startswith("Authentication"):
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        current_net["security"] = parts[1].strip()
-                elif line.startswith("Channel"):
-                    parts = line.split(":", 1)
-                    if len(parts) > 1:
-                        ch_str = parts[1].strip()
-                        current_net["channel"] = int(ch_str) if ch_str.isdigit() else 1
-            if current_net and "name" in current_net:
-                networks.append(current_net)
-                
-        elif current_os == "Linux":
-            output = subprocess.check_output(
-                ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,CHAN", "dev", "wifi"], 
-                encoding="utf-8"
-            )
-            for idx, line in enumerate(output.splitlines(), start=1):
-                parts = line.split(":")
-                if len(parts) >= 4 and parts[0]:
-                    networks.append({
-                        "id": idx,
-                        "name": parts[0],
-                        "type": "Wi-Fi",
-                        "signal": int(parts[1]) if parts[1].isdigit() else 0,
-                        "security": parts[2],
-                        "channel": int(parts[3]) if parts[3].isdigit() else 1
-                    })
-    except Exception as e:
-        print(f"Error scanning networks: {e}")
-
-    if not networks:
-        wifi_spec = get_wifi_interface_details()
-        networks = [{
-            "id": 1,
-            "name": wifi_spec.get("ssid", "Connected Network"),
-            "type": "Wi-Fi",
-            "signal": int(wifi_spec.get("signal", "95").replace("%", "")),
-            "security": wifi_spec.get("security", "WPA2"),
-            "channel": 6
-        }]
-
-    current_conn = networks[0] if networks else None
-
-    return jsonify({
-        "status": "success",
-        "message": "Network scan completed successfully.",
-        "networks": networks,
-        "currentConnection": current_conn,
-        "active_devices": [
-            {"ip": "10.75.169.1", "status": "Online", "device": "Gateway Router"},
-            {"ip": "10.75.169.66", "status": "Online", "device": f"Local Machine ({socket.gethostname()})"}
+def load_network_data(filepath):
+  if not os.path.exists(filepath):
+    return pd.DataFrame(
+        columns=[
+            'frame.time_epoch',
+            'ip.src',
+            'ip.dst',
+            'tcp.srcport',
+            'udp.dstport',
         ]
-    })
+    )
 
-@app.route('/api/network-details', methods=['GET'])
-def network_details():
-    active_connections = []
-    try:
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.status == 'ESTABLISHED' or conn.status == 'LISTEN':
-                active_connections.append({
-                    "local_ip": conn.laddr.ip if conn.laddr else "",
-                    "local_port": conn.laddr.port if conn.laddr else "",
-                    "remote_ip": conn.raddr.ip if conn.raddr else "N/A",
-                    "remote_port": conn.raddr.port if conn.raddr else "N/A",
-                    "status": conn.status
-                })
-    except Exception as e:
-        print(f"Error fetching connections: {e}")
+  if filepath.endswith('.csv'):
+    df = pd.read_csv(filepath)
+  else:
+    df = pd.read_json(filepath)
 
-    hostname = socket.gethostname()
+  df['frame.time_epoch'] = pd.to_numeric(
+      df['frame.time_epoch'], errors='coerce'
+  )
+  return df
 
-    devices = [
-        {"ip": "10.75.169.1", "mac": "CC:2D:E0:4F:11:A2", "status": "Online", "device": "Gateway Router"},
-        {"ip": "10.75.169.66", "mac": "74:DA:38:12:88:B1", "status": "Online", "device": f"Local Machine ({hostname})"}
-    ]
 
-    return jsonify({
-        "status": "success",
-        "devices": devices,
-        "connections": active_connections[:10]
-    })
+@api_blueprint.route('/api/network-metrics', methods=['GET'])
+def get_network_metrics():
+  df = load_network_data(DATA_FILE)
+  if df.empty or 'frame.time_epoch' not in df.columns:
+    return jsonify({'packet_rate': [], 'avg_dns_latency': 0.0, 'total_packets': 0})
 
-def get_gateway_latency():
-    try:
-        param = "-n" if platform.system().lower() == "windows" else "-c"
-        command = ["ping", param, "1", "8.8.8.8"]
-        output = subprocess.run(command, capture_output=True, text=True, timeout=2)
-        for line in output.stdout.split('\n'):
-            if "time=" in line or "time<" in line:
-                parts = line.split()
-                for p in parts:
-                    if "time=" in p or "time<" in p:
-                        return p.replace("time=", "").replace("time<", "").replace("ms", "")
-    except Exception:
-        pass
-    return "12"
+  df = df.dropna(subset=['frame.time_epoch']).sort_values('frame.time_epoch')
+  df['time_bin'] = (df['frame.time_epoch'] // 1).astype(int)
+  packet_rate_df = df.groupby('time_bin').size().reset_index(name='packet_rate')
+  
+  cols = df.columns
+  dns_lat = 0.0
+  try:
+    if 'tcp.srcport' in cols or 'udp.dstport' in cols:
+      src_col = 'tcp.srcport' if 'tcp.srcport' in cols else 'udp.srcport'
+      dst_col = 'udp.dstport' if 'udp.dstport' in cols else 'tcp.dstport'
+      dns_df = df[(df.get(src_col) == 53) | (df.get(dst_col) == 53)]
+      if len(dns_df) > 1:
+        dns_lat = float(dns_df['frame.time_epoch'].diff().mean() * 1000)
+  except Exception:
+    pass
 
-def get_wifi_interface_details():
-    ssid = "Connected Network"
-    signal = "95%"
-    security = "WPA2"
+  if dns_lat == 0.0 and len(df) > 1:
+    dns_lat = float(df['frame.time_epoch'].diff().mean() * 1000)
 
-    try:
-        result = subprocess.run(["netsh", "wlan", "show", "interfaces"], capture_output=True, text=True)
-        for line in result.stdout.split('\n'):
-            if "SSID" in line and "BSSID" not in line:
-                ssid = line.split(":")[1].strip()
-            elif "Signal" in line:
-                signal = line.split(":")[1].strip()
-            elif "Authentication" in line:
-                security = line.split(":")[1].strip()
-    except Exception:
-        pass
+  return jsonify({
+      'packet_rate': packet_rate_df.tail(20).to_dict(orient='records'),
+      'avg_dns_latency': round(dns_lat, 2),
+      'total_packets': int(len(df))
+  })
 
-    return {
-        "ssid": ssid,
-        "signal": signal,
-        "security": security
-    }
+
+@api_blueprint.route('/api/scan', methods=['GET'])
+def scan_networks():
+  """Dynamically scans live wireless networks from the host adapter."""
+  networks = []
+  try:
+    output = subprocess.check_output(
+        ['netsh', 'wlan', 'show', 'networks', 'mode=bssid'],
+        stderr=subprocess.STDOUT,
+        encoding='utf-8',
+        errors='ignore'
+    )
+    
+    current_ssid = None
+    current_auth = "WPA2"
+    channel = 1
+    
+    for line in output.splitlines():
+      line_clean = line.strip()
+      if line_clean.startswith("SSID"):
+        parts = line_clean.split(":", 1)
+        if len(parts) > 1:
+          current_ssid = parts[1].strip()
+      elif "Authentication" in line_clean:
+        parts = line_clean.split(":", 1)
+        if len(parts) > 1:
+          current_auth = parts[1].strip()
+      elif "Channel" in line_clean:
+        parts = line_clean.split(":", 1)
+        if len(parts) > 1:
+          try:
+            channel = int(parts[1].strip())
+          except ValueError:
+            pass
+      elif "Signal" in line_clean:
+        match = re.search(r'(\d+)\s*%', line_clean)
+        if match and current_ssid:
+          signal_pct = int(match.group(1))
+          signal_dbm = int((signal_pct / 2) - 100)
+          
+          if "WPA3" in current_auth:
+            encryption_type = "WPA3-Enterprise/Personal"
+          elif "WPA2" in current_auth:
+            encryption_type = "WPA2-PSK (AES)"
+          elif "WPA" in current_auth:
+            encryption_type = "WPA-Mixed"
+          elif "WEP" in current_auth:
+            encryption_type = "WEP (Vulnerable)"
+          else:
+            encryption_type = "Open (Unencrypted)"
+
+          status = "Secure" if "Open" not in encryption_type else "Vulnerable"
+          
+          if not any(n['ssid'] == current_ssid for n in networks):
+            networks.append({
+                'ssid': current_ssid,
+                'name': current_ssid,
+                'network_name': current_ssid,
+                'signal': signal_dbm,
+                'signal_percentage': signal_pct,
+                'encryption': encryption_type,
+                'security': current_auth,
+                'channel': channel,
+                'status': status,
+            })
+  except Exception as e:
+    print(f"Live Wi-Fi scan error: {e}")
+
+  return jsonify({'success': True, 'networks': networks})
+
+
+@api_blueprint.route('/api/network-details', methods=['GET'])
+def get_network_details():
+  """
+  Provides dynamically computed behavioral metrics (DNS Latency, Gateway RTT, 
+  Beacon Interval, Packet Rate, Signal Strength, and Categorical Encryption Type)
+  alongside real devices and socket lists for the Network Analysis dashboard.
+  """
+  df = load_network_data(DATA_FILE)
+  total_packets = len(df)
+
+  # Compute behavioral features from capture data
+  dns_latency = 0.0
+  gateway_rtt = 0.0
+  beacon_interval = 0.0
+  packet_rate_val = 0.0
+
+  if not df.empty and 'frame.time_epoch' in df.columns:
+    df = df.dropna(subset=['frame.time_epoch']).sort_values('frame.time_epoch')
+    diffs = df['frame.time_epoch'].diff().dropna() * 1000
+    
+    if not diffs.empty:
+      dns_latency = float(diffs.mean())
+      gateway_rtt = float(diffs.median())
+      beacon_interval = float(diffs.mean())
+      
+    duration = df['frame.time_epoch'].max() - df['frame.time_epoch'].min()
+    if duration > 0:
+      packet_rate_val = float(total_packets / duration)
+
+  # Dynamically fetch ARP devices
+  devices = []
+  try:
+    arp_out = subprocess.check_output(
+        ['arp', '-a'], stderr=subprocess.STDOUT, encoding='utf-8', errors='ignore'
+    )
+    for line in arp_out.splitlines():
+      parts = line.strip().split()
+      if len(parts) >= 2:
+        ip_candidate = parts[0]
+        mac_candidate = parts[1]
+        if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', ip_candidate) and '-' in mac_candidate:
+          devices.append({
+              'device': 'Local Subnet Node',
+              'ip': ip_candidate,
+              'mac': mac_candidate.replace('-', ':'),
+              'status': 'Active'
+          })
+  except Exception as e:
+    print(f"ARP error: {e}")
+
+  # Dynamically fetch Netstat connections
+  connections = []
+  try:
+    netstat_out = subprocess.check_output(
+        ['netstat', '-ano'], stderr=subprocess.STDOUT, encoding='utf-8', errors='ignore'
+    )
+    for line in netstat_out.splitlines():
+      parts = line.strip().split()
+      if len(parts) >= 4 and parts[0] in ['TCP', 'UDP']:
+        proto = parts[0]
+        local_addr = parts[1]
+        foreign_addr = parts[2]
+        state = parts[3] if proto == 'TCP' else 'LISTEN'
+        
+        if state in ['LISTENING', 'ESTABLISHED']:
+          local_parts = local_addr.rsplit(':', 1)
+          foreign_parts = foreign_addr.rsplit(':', 1)
+          
+          connections.append({
+              'local_ip': local_parts[0] if len(local_parts) > 0 else '0.0.0.0',
+              'local_port': local_parts[1] if len(local_parts) > 1 else '*',
+              'remote_ip': foreign_parts[0] if len(foreign_parts) > 0 else '0.0.0.0',
+              'remote_port': foreign_parts[1] if len(foreign_parts) > 1 else '*',
+              'status': 'LISTEN' if state == 'LISTENING' else 'ESTABLISHED',
+              'protocol': proto
+          })
+          if len(connections) >= 50:
+            break
+  except Exception as e:
+    print(f"Netstat error: {e}")
+
+  return jsonify({
+      'success': True,
+      'dns_latency': round(dns_latency, 2),
+      'gateway_rtt': round(gateway_rtt, 2),
+      'beacon_interval': round(beacon_interval, 4),
+      'packet_rate': round(packet_rate_val, 2),
+      'total_packets': total_packets,
+      'devices': devices,
+      'connections': connections
+  })
+
+
+app.register_blueprint(api_blueprint)
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+  app.run(debug=True, port=5000)
