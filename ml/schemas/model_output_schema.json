@@ -1,0 +1,50 @@
+{
+  "version": "1.0",
+  "binary": {
+    "purpose": "Normal vs Threat detection",
+    "input_features": 82,
+    "threshold": 0.09,
+    "classes": {
+      "0": "Normal",
+      "1": "Threat"
+    },
+    "output": {
+      "is_threat": "boolean",
+      "attack_probability": "float [0,1]",
+      "normal_probability": "float [0,1]",
+      "confidence": "float [0,1]"
+    },
+    "decision": {
+      "attack_probability_gte_0.09": "Threat",
+      "attack_probability_lt_0.09": "Normal"
+    },
+    "note": "Binary model does not identify attack type."
+  },
+  "multiclass": {
+    "purpose": "Attack category classification",
+    "input_features": 81,
+    "classes": {
+      "0": "Normal",
+      "1": "(Re)Assoc",
+      "2": "Botnet",
+      "3": "Deauth",
+      "4": "Disas",
+      "5": "Evil_Twin",
+      "6": "Kr00k",
+      "7": "Krack",
+      "8": "Malware",
+      "9": "RogueAP",
+      "10": "SQL_Injection",
+      "11": "SSDP",
+      "12": "SSH",
+      "13": "Website_spoofing"
+    },
+    "output": {
+      "predicted_class_id": "integer 0-13",
+      "predicted_class": "string",
+      "confidence": "float [0,1]",
+      "class_probabilities": "object"
+    },
+    "note": "Multiclass model provides the predicted category and class probabilities."
+  }
+}

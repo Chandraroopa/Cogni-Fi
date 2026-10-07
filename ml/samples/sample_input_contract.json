@@ -1,0 +1,10 @@
+{
+  "binary": {
+    "feature_count": 82,
+    "feature_order_source": "binary_feature_schema.json"
+  },
+  "multiclass": {
+    "feature_count": 81,
+    "feature_order_source": "multiclass_feature_schema.json"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "model": "cognifi_binary_final_82",
+  "threshold": 0.09,
+  "class_mapping": {
+    "0": "Normal",
+    "1": "Threat"
+  },
+  "decision_rule": {
+    "if_attack_probability_gte": 0.09,
+    "prediction": "Threat"
+  },
+  "otherwise": "Normal",
+  "selected_using": "validation",
+  "test_used_for_selection": false
+}

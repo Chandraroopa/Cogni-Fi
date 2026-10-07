@@ -1,132 +1,265 @@
-"""
-CogniFi ML inference module.
-
-Loads the frozen LightGBM champion model and production schema
-for real-time threat prediction.
-"""
-
+import os
 import json
-from pathlib import Path
-
 import joblib
+import numpy as np
 import pandas as pd
 
 
-class CognifiThreatPredictor:
-    """Run threat predictions using the frozen CogniFi ML model."""
+class CognifiBinaryPredictor:
 
-    def __init__(self, model_path=None, schema_path=None):
-        base_dir = Path(__file__).resolve().parent / "models"
+    def __init__(
+        self,
+        model_path,
+        schema_path,
+        medians_path,
+        threshold_path
+    ):
 
-        self.model_path = Path(
-            model_path or base_dir / "cognifi_final_champion_328_model.joblib"
-        )
-        self.schema_path = Path(
-            schema_path or base_dir / "cognifi_production_schema.json"
-        )
+        self.model = joblib.load(model_path)
 
-        self.model = joblib.load(self.model_path)
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
 
-        with open(self.schema_path, "r", encoding="utf-8") as file:
-            self.schema = json.load(file)
+        with open(threshold_path, "r", encoding="utf-8") as f:
+            threshold_config = json.load(f)
 
-        self.feature_names = [
-            feature["name"] for feature in self.schema["features"]
-        ]
+        self.features = schema["feature_order"]
 
         self.threshold = float(
-            self.schema.get("decision_threshold", 0.50)
+            threshold_config["threshold"]
         )
 
-    def predict_window(self, features):
-        """
-        Predict whether one or more feature windows represent an attack.
+        self.medians = joblib.load(
+            medians_path
+        )
 
-        Parameters
-        ----------
-        features : dict, pandas.Series, or pandas.DataFrame
-            Feature values matching the production schema.
+    def _prepare_input(self, X):
 
-        Returns
-        -------
-        dict or list[dict]
-            Attack probability, normal probability, threat decision,
-            confidence, and decision threshold.
-        """
+        if isinstance(X, dict):
+            X = pd.DataFrame([X])
 
-        if isinstance(features, dict):
-            missing = [
-                name for name in self.feature_names
-                if name not in features
-            ]
+        elif isinstance(X, pd.Series):
+            X = X.to_frame().T
 
-            if missing:
-                raise ValueError(
-                    f"Missing required features: {missing}"
-                )
+        elif not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
 
-            df = pd.DataFrame(
-                [[features[name] for name in self.feature_names]],
-                columns=self.feature_names,
+        X = X[self.features].copy()
+
+        for col in self.features:
+            X[col] = pd.to_numeric(
+                X[col],
+                errors="coerce"
             )
 
-        elif isinstance(features, pd.Series):
-            missing = [
-                name for name in self.feature_names
-                if name not in features.index
-            ]
+        X = X.replace(
+            [np.inf, -np.inf],
+            np.nan
+        )
 
-            if missing:
-                raise ValueError(
-                    f"Missing required features: {missing}"
-                )
+        X = X.fillna(
+            self.medians
+        )
 
-            df = pd.DataFrame(
-                [features[self.feature_names].values],
-                columns=self.feature_names,
-            )
+        X = X.fillna(0)
 
-        elif isinstance(features, pd.DataFrame):
-            missing = [
-                name for name in self.feature_names
-                if name not in features.columns
-            ]
+        return X.astype(np.float32)
 
-            if missing:
-                raise ValueError(
-                    f"Missing required features: {missing}"
-                )
+    def predict(self, X):
 
-            df = features[self.feature_names].copy()
+        Xp = self._prepare_input(X)
 
+        probabilities = self.model.predict_proba(Xp)
+
+        attack_probability = float(
+            probabilities[:, 1][0]
+        )
+
+        normal_probability = float(
+            probabilities[:, 0][0]
+        )
+
+        is_threat = (
+            attack_probability >= self.threshold
+        )
+
+        confidence = (
+            attack_probability
+            if is_threat
+            else normal_probability
+        )
+
+        return {
+            "is_threat": bool(is_threat),
+            "attack_probability": attack_probability,
+            "normal_probability": normal_probability,
+            "confidence": confidence,
+            "threshold": self.threshold
+        }
+
+
+class CognifiMulticlassPredictor:
+
+    def __init__(
+        self,
+        model_path,
+        schema_path,
+        label_mapping_path
+    ):
+
+        self.model = joblib.load(model_path)
+
+        with open(schema_path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+
+        with open(
+            label_mapping_path,
+            "r",
+            encoding="utf-8"
+        ) as f:
+            labels = json.load(f)
+
+        if "feature_order" in schema:
+            self.features = schema["feature_order"]
+        elif "features" in schema:
+            self.features = schema["features"]
         else:
-            raise ValueError(
-                "Input must be a dict, pandas Series, or pandas DataFrame"
+            raise KeyError(
+                "Multiclass schema must contain "
+                "'feature_order' or 'features'."
             )
 
-        probabilities = self.model.predict_proba(df)[:, 1]
+        self.classes = labels["classes"]
 
-        predictions = []
+    def _prepare_input(self, X):
 
-        for probability in probabilities:
-            probability = float(probability)
+        if isinstance(X, dict):
+            X = pd.DataFrame([X])
 
-            predictions.append(
-                {
-                    "is_threat": bool(
-                        probability >= self.threshold
-                    ),
-                    "attack_probability": round(
-                        probability, 4
-                    ),
-                    "normal_probability": round(
-                        1.0 - probability, 4
-                    ),
-                    "confidence": round(
-                        abs(probability - 0.5) * 2, 4
-                    ),
-                    "decision_threshold": self.threshold,
-                }
+        elif isinstance(X, pd.Series):
+            X = X.to_frame().T
+
+        elif not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
+
+        X = X[self.features].copy()
+
+        for col in self.features:
+            X[col] = pd.to_numeric(
+                X[col],
+                errors="coerce"
             )
 
-        return predictions[0] if len(predictions) == 1 else predictions
+        X = X.replace(
+            [np.inf, -np.inf],
+            np.nan
+        )
+
+        return X
+
+    def predict(self, X):
+
+        Xp = self._prepare_input(X)
+
+        probabilities = self.model.predict_proba(Xp)
+
+        probability_row = probabilities[0]
+
+        class_id = int(
+            np.argmax(probability_row)
+        )
+
+        confidence = float(
+            probability_row[class_id]
+        )
+
+        predicted_class = self.classes[class_id]
+
+        class_probabilities = {
+            self.classes[i]: float(probability_row[i])
+            for i in range(len(self.classes))
+        }
+
+        return {
+            "predicted_class": predicted_class,
+            "class_id": class_id,
+            "confidence": confidence,
+            "class_probabilities": class_probabilities
+        }
+
+
+class CognifiPredictor:
+
+    def __init__(self, base_dir):
+
+        ml_dir = os.path.abspath(base_dir)
+
+        self.binary = CognifiBinaryPredictor(
+            model_path=os.path.join(
+                ml_dir,
+                "models",
+                "binary_model.joblib"
+            ),
+            schema_path=os.path.join(
+                ml_dir,
+                "schemas",
+                "binary_feature_schema.json"
+            ),
+            medians_path=os.path.join(
+                ml_dir,
+                "preprocessing",
+                "binary_train_medians.joblib"
+            ),
+            threshold_path=os.path.join(
+                ml_dir,
+                "config",
+                "binary_threshold.json"
+            )
+        )
+
+        self.multiclass = CognifiMulticlassPredictor(
+            model_path=os.path.join(
+                ml_dir,
+                "models",
+                "multiclass_model.joblib"
+            ),
+            schema_path=os.path.join(
+                ml_dir,
+                "schemas",
+                "multiclass_feature_schema.json"
+            ),
+            label_mapping_path=os.path.join(
+                ml_dir,
+                "schemas",
+                "multiclass_label_mapping.json"
+            )
+        )
+
+    def predict_binary(self, X):
+
+        return self.binary.predict(X)
+
+    def predict_multiclass(self, X):
+
+        return self.multiclass.predict(X)
+
+
+if __name__ == "__main__":
+
+    BASE_DIR = os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__)
+        )
+    )
+
+    predictor = CognifiPredictor(BASE_DIR)
+
+    print("CogniFi predictor loaded successfully.")
+    print(
+        "Binary features:",
+        len(predictor.binary.features)
+    )
+    print(
+        "Multiclass features:",
+        len(predictor.multiclass.features)
+    )
