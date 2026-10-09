@@ -9,4 +9,4 @@ numpy
 pandas
 joblib
 lightgbm
-scikit-learn
+scikit-learn==1.9.1

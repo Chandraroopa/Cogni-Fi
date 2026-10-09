@@ -246,12 +246,8 @@ class CognifiPredictor:
 
 if __name__ == "__main__":
 
-    BASE_DIR = os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    )
-
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    
     predictor = CognifiPredictor(BASE_DIR)
 
     print("CogniFi predictor loaded successfully.")
