@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketDisconnect
@@ -8,7 +7,10 @@ import os
 import threading
 
 from backend.capture.adapter import TSharkCapture
-from backend.capture.feature_window import FeatureExtractor
+from backend.capture.feature_window import (
+    CausalWindowManager,
+    FeatureExtractor,
+)
 from backend.capture.live_detector import LiveRiskDetector
 
 
@@ -32,10 +34,7 @@ def health():
 
 
 def collect_packets(interface, packet_queue, stop_event, loop):
-    """
-    Capture packets on a background thread and safely deliver them
-    to the asyncio event loop.
-    """
+    """Capture packets on a background thread and enqueue them safely."""
     capture = TSharkCapture(interface=interface)
 
     def enqueue_packet(packet):
@@ -54,11 +53,10 @@ def collect_packets(interface, packet_queue, stop_event, loop):
             if stop_event.is_set():
                 break
 
-            # asyncio.Queue must only be accessed from its event loop.
             try:
                 loop.call_soon_threadsafe(enqueue_packet, packet)
             except RuntimeError:
-                # The event loop has already closed.
+                # Event loop has already closed.
                 break
 
     except Exception as exc:
@@ -78,12 +76,10 @@ async def websocket_endpoint(websocket: WebSocket):
     loop = asyncio.get_running_loop()
 
     extractor = FeatureExtractor(window_size=1.0)
+    window_manager = CausalWindowManager(window_size=1.0)
     detector = LiveRiskDetector()
 
-    # A bounded queue prevents unlimited memory growth.
     packet_queue = asyncio.Queue(maxsize=2000)
-
-    # threading.Event is safe to use from the capture worker thread.
     stop_event = threading.Event()
 
     capture_task = asyncio.create_task(
@@ -96,8 +92,34 @@ async def websocket_endpoint(websocket: WebSocket):
         )
     )
 
-    packets = []
     last_status_time = loop.time()
+
+    async def process_windows(windows):
+        """Extract features and send risk updates for completed windows."""
+        for window in windows:
+            window_packets = window["packets"]
+
+            if not window_packets:
+                continue
+
+            features = extractor.extract_window_features(
+                window_packets,
+                duration=1.0,
+            )
+            risk = detector.analyze(features)
+
+            await websocket.send_json({
+                "type": "risk_update",
+                "features": features,
+                "risk": risk,
+            })
+
+            print(
+                f"[RISK] Window {window.get('window_id', '?')} "
+                f"| Packets: {len(window_packets)} "
+                f"| {risk.get('risk_level', 'Unknown')} "
+                f"| Score: {risk.get('risk_score', 'N/A')}"
+            )
 
     try:
         print(f"[TShark] Starting capture on interface {interface}...")
@@ -110,7 +132,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 )
 
             except asyncio.TimeoutError:
-                # Keep the WebSocket alive during periods without traffic.
                 now = loop.time()
 
                 if now - last_status_time >= 5.0:
@@ -122,7 +143,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     last_status_time = now
 
                 if capture_task.done():
-                    # Surface an unexpected worker exception if one occurred.
                     worker_error = capture_task.exception()
 
                     if worker_error is not None:
@@ -131,6 +151,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         )
 
                     print("[TShark] Capture worker exited.")
+
                     await websocket.send_json({
                         "type": "error",
                         "error": (
@@ -142,35 +163,15 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 continue
 
-            packets.append(packet)
-
             print(
-                f"[PACKET] {len(packets)} | "
-                f"length={packet.get('length', packet.get('frame.len'))} | "
-                f"source={packet.get('source')} | "
-                f"destination={packet.get('destination')}"
+                f"[PACKET] "
+                f"length={packet.get('length', packet.get('frame.len'))} "
+                f"| source={packet.get('source')} "
+                f"| destination={packet.get('destination')}"
             )
 
-            # Analyze each batch of 10 packets.
-            if len(packets) >= 10:
-                batch = packets[:10]
-                del packets[:10]
-
-                features = extractor.extract_window_features(batch)
-                risk = detector.analyze(features)
-
-                result = {
-                    "type": "risk_update",
-                    "features": features,
-                    "risk": risk,
-                }
-
-                await websocket.send_json(result)
-
-                print(
-                    f"[RISK] {risk.get('risk_level', 'Unknown')} "
-                    f"| Score: {risk.get('risk_score', 'N/A')}"
-                )
+            completed_windows = window_manager.add_packet(packet)
+            await process_windows(completed_windows)
 
     except WebSocketDisconnect:
         print("[WS] Client disconnected.")
@@ -189,9 +190,13 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         stop_event.set()
 
-        # Do not cancel asyncio.to_thread() as a way of stopping its
-        # underlying thread; cancellation does not terminate that thread.
-        # Give the worker a short opportunity to finish.
+        # Flush the final partial window without inventing packets.
+        try:
+            await process_windows(window_manager.flush())
+        except Exception as exc:
+            print(f"[WS] Final window processing error: {exc}")
+
+        # Allow the capture worker time to finish.
         try:
             await asyncio.wait_for(
                 asyncio.shield(capture_task),

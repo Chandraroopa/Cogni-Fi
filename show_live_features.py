@@ -18,7 +18,10 @@ try:
 
         for window in windows:
             packets = window["packets"]
-            features = extractor.extract_window_features(packets)
+            features = extractor.extract_window_features(
+    packets,
+    duration=1.0,
+)
 
             print("\n=== ACTUAL LIVE FEATURE WINDOW ===")
             print("Window ID:", window["window_id"])

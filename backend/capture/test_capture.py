@@ -44,7 +44,10 @@ def test_feature_extraction():
 
     # Validation checks
     assert isinstance(features, dict), "Error: Feature extraction must return a dictionary."
-    assert len(features) == len(FEATURE_NAMES), f"Error: Expected {len(FEATURE_NAMES)} features, got {len(features)}."
+    assert len(features) == len(FEATURE_NAMES) + 6, (
+    f"Expected 30 operational features + 6 availability flags, "
+    f"got {len(features)} entries."
+)
     assert len(vector) == 30, f"Error: Feature vector length must be 30, got {len(vector)}."
 
     print("\n[SUCCESS] All feature validation assertions passed!")

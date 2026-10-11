@@ -8,17 +8,12 @@ def _value(layer, key, default=None):
     """Safely get a value from a TShark layer."""
     if not isinstance(layer, dict):
         return default
-
     value = layer.get(key)
-
-    if value in (None, ""):
-        return default
-
-    return value
+    return default if value in (None, "") else value
 
 
 def _float(value, default=None):
-    """Convert a value to float without inventing missing values."""
+    """Convert a value to a finite float."""
     try:
         result = float(value)
         return result if result == result and abs(result) != float("inf") else default
@@ -38,13 +33,9 @@ def _optional_bool(value):
     """Preserve unavailable boolean fields as None."""
     if value is None or value == "":
         return None
-
     if isinstance(value, bool):
         return value
-
-    return str(value).strip().lower() in {
-        "1", "true", "yes", "set"
-    }
+    return str(value).strip().lower() in {"1", "true", "yes", "set"}
 
 
 def _timestamp(packet_dict, frame):
@@ -53,49 +44,90 @@ def _timestamp(packet_dict, frame):
 
     if raw_epoch is not None:
         value = _float(raw_epoch)
-
         if value is not None:
-            # Epoch timestamps are usually seconds; some sources use ms.
-            if value > 10_000_000_000:
-                value /= 1000.0
-            return value
-
+            return value / 1000.0 if value > 10_000_000_000 else value
         try:
-            iso = str(raw_epoch).replace("Z", "+00:00")
-            return datetime.fromisoformat(iso).timestamp()
+            return datetime.fromisoformat(
+                str(raw_epoch).replace("Z", "+00:00")
+            ).timestamp()
         except (ValueError, TypeError, OverflowError, OSError):
             pass
 
     raw = packet_dict.get("timestamp")
-
     if raw not in (None, ""):
         value = _float(raw)
-
         if value is not None:
-            if value > 10_000_000_000:
-                value /= 1000.0
-            return value
-
+            return value / 1000.0 if value > 10_000_000_000 else value
         try:
-            iso = str(raw).replace("Z", "+00:00")
-            return datetime.fromisoformat(iso).timestamp()
+            return datetime.fromisoformat(
+                str(raw).replace("Z", "+00:00")
+            ).timestamp()
         except (ValueError, TypeError, OverflowError, OSError):
             pass
 
-    # None indicates that the timestamp was unavailable.
+    return None
+
+
+def _detect_tcp_retransmission(tcp):
+    """
+    Detect TShark TCP retransmission markers.
+
+    Returns:
+        True: retransmission explicitly identified.
+        False: an explicit false marker is available.
+        None: retransmission status is unavailable.
+
+    TShark EK may store expert records as a list under _ws_expert.
+    Lost-segment messages alone are not treated as retransmissions.
+    """
+    if not isinstance(tcp, dict) or not tcp:
+        return None
+
+    marker_keys = (
+        "tcp_analysis_retransmission",
+        "tcp_analysis_fast_retransmission",
+        "tcp_analysis_spurious_retransmission",
+        "tcp_tcp_analysis_retransmission",
+        "tcp_tcp_analysis_fast_retransmission",
+        "tcp_tcp_analysis_spurious_retransmission",
+    )
+
+    values = [_optional_bool(tcp.get(key)) for key in marker_keys]
+
+    if any(value is True for value in values):
+        return True
+
+    # TShark EK commonly stores expert records as a list.
+    expert = tcp.get("_ws_expert", [])
+    if isinstance(expert, dict):
+        expert = [expert]
+
+    if isinstance(expert, list):
+        for entry in expert:
+            if not isinstance(entry, dict):
+                continue
+
+            # Null-valued marker keys still indicate that TShark
+            # included the corresponding analysis marker.
+            if any(key in entry for key in marker_keys):
+                return True
+
+            message = str(
+                entry.get("_ws_expert__ws_expert_message", "")
+            ).lower()
+
+            if "retransmission" in message:
+                return True
+
+    if any(value is False for value in values):
+        return False
+
     return None
 
 
 def normalize_packet(packet_dict):
-    """
-    Normalize one TShark EK JSON packet.
-
-    Missing optional fields remain None.
-    IPv4 and IPv6 fields remain separate.
-    The original TShark layers are retained for additional extraction.
-    """
+    """Normalize one TShark EK JSON packet."""
     layers = packet_dict.get("layers", {})
-
     if not isinstance(layers, dict):
         layers = {}
 
@@ -105,13 +137,12 @@ def normalize_packet(packet_dict):
         "http", "ssdp", "llc",
     )
 
-    normalized_layers = {}
-
-    for name in layer_names:
-        layer = layers.get(name, {})
-        normalized_layers[name] = (
-            layer if isinstance(layer, dict) else {}
-        )
+    normalized_layers = {
+        name: layers.get(name, {})
+        if isinstance(layers.get(name, {}), dict)
+        else {}
+        for name in layer_names
+    }
 
     frame = normalized_layers["frame"]
     eth = normalized_layers["eth"]
@@ -130,55 +161,36 @@ def normalize_packet(packet_dict):
     llc = normalized_layers["llc"]
 
     # Layer presence
-    frame_present = bool(frame)
-    eth_present = bool(eth)
-    ip_present = bool(ip)
-    ipv6_present = bool(ipv6)
-    tcp_present = bool(tcp)
-    udp_present = bool(udp)
-    dns_present = bool(dns)
-    arp_present = bool(arp)
-    wlan_present = bool(wlan)
-    radiotap_present = bool(radiotap)
-    wlan_radio_present = bool(wlan_radio)
-    tls_present = bool(tls)
-    http_present = bool(http)
-    ssdp_present = bool(ssdp)
-    llc_present = bool(llc)
+    presence = {
+        name: bool(layer)
+        for name, layer in normalized_layers.items()
+    }
 
     # Frame
     timestamp = _timestamp(packet_dict, frame)
     length = _int(_value(frame, "frame_frame_len"))
-    frame_time_delta = _float(
-        _value(frame, "frame_frame_time_delta")
-    )
+    frame_time_delta = _float(_value(frame, "frame_frame_time_delta"))
     frame_time_delta_displayed = _float(
         _value(frame, "frame_frame_time_delta_displayed")
-    )
-    frame_time_relative = _float(
-        _value(frame, "frame_frame_time_relative")
     )
 
     # Ethernet and network addresses
     eth_source = _value(eth, "eth_eth_src")
     eth_destination = _value(eth, "eth_eth_dst")
-
     ip_source = _value(ip, "ip_ip_src")
     ip_destination = _value(ip, "ip_ip_dst")
     ipv6_source = _value(ipv6, "ipv6_ipv6_src")
     ipv6_destination = _value(ipv6, "ipv6_ipv6_dst")
 
     source = ip_source or ipv6_source or eth_source
-    destination = (
-        ip_destination or ipv6_destination or eth_destination
-    )
+    destination = ip_destination or ipv6_destination or eth_destination
 
-    # IPv4 fields: do not populate them from IPv6 packets.
+    # IPv4
     ip_proto = _int(_value(ip, "ip_ip_proto"))
     ip_ttl = _int(_value(ip, "ip_ip_ttl"))
     ip_version = _int(_value(ip, "ip_ip_version"))
 
-    # IPv6-specific fields
+    # IPv6
     ipv6_next_header = _int(_value(ipv6, "ipv6_ipv6_nxt"))
     ipv6_hop_limit = _int(_value(ipv6, "ipv6_ipv6_hlim"))
     ipv6_version = _int(_value(ipv6, "ipv6_ipv6_version"))
@@ -191,9 +203,7 @@ def normalize_packet(packet_dict):
     tcp_ack = _int(_value(tcp, "tcp_tcp_ack"))
     tcp_ack_raw = _int(_value(tcp, "tcp_tcp_ack_raw"))
     tcp_time_delta = _float(_value(tcp, "tcp_tcp_time_delta"))
-    tcp_time_relative = _float(
-        _value(tcp, "tcp_tcp_time_relative")
-    )
+    tcp_time_relative = _float(_value(tcp, "tcp_tcp_time_relative"))
     tcp_option_len = _int(_value(tcp, "tcp_tcp_hdr_len"))
 
     tcp_syn = _optional_bool(_value(tcp, "tcp_tcp_flags_syn"))
@@ -201,43 +211,21 @@ def normalize_packet(packet_dict):
     tcp_fin = _optional_bool(_value(tcp, "tcp_tcp_flags_fin"))
     tcp_push = _optional_bool(_value(tcp, "tcp_tcp_flags_push"))
     tcp_rst = _optional_bool(_value(tcp, "tcp_tcp_flags_reset"))
+    tcp_retransmission = _detect_tcp_retransmission(tcp)
 
-    retransmission_keys = (
-        "tcp_analysis_retransmission",
-        "tcp_analysis_fast_retransmission",
-        "tcp_analysis_lost_segment",
+    tcp_analysis_present = any(
+        key.startswith("tcp_tcp_analysis") for key in tcp
     )
-
-    retransmission_values = [
-        _optional_bool(_value(tcp, key))
-        for key in retransmission_keys
-    ]
-
-    if any(value is True for value in retransmission_values):
-        tcp_retransmission = True
-    elif any(value is not None for value in retransmission_values):
-        tcp_retransmission = False
-    else:
-        tcp_retransmission = None
-
-    tcp_analysis_present = (
-        "tcp_tcp_analysis" in tcp
-        and tcp.get("tcp_tcp_analysis") is not None
-    )
-
     tcp_analysis_flags_present = any(
-        key.startswith("tcp_tcp_analysis_")
-        for key in tcp
-    )
+        "analysis" in key.lower() for key in tcp
+    ) or isinstance(tcp.get("_ws_expert"), (dict, list))
 
     # UDP
     udp_srcport = _int(_value(udp, "udp_udp_srcport"))
     udp_dstport = _int(_value(udp, "udp_udp_dstport"))
     udp_length = _int(_value(udp, "udp_udp_length"))
     udp_time_delta = _float(_value(udp, "udp_udp_time_delta"))
-    udp_time_relative = _float(
-        _value(udp, "udp_udp_time_relative")
-    )
+    udp_time_relative = _float(_value(udp, "udp_udp_time_relative"))
 
     # DNS
     dns_transaction_id = _value(dns, "dns_dns_id")
@@ -254,21 +242,15 @@ def normalize_packet(packet_dict):
     frame_type = _int(_value(wlan, "wlan_wlan_fc_type"))
     frame_subtype = _int(_value(wlan, "wlan_wlan_fc_subtype"))
     retry = _optional_bool(_value(wlan, "wlan_wlan_fc_retry"))
-    protected = _optional_bool(
-        _value(wlan, "wlan_wlan_fc_protected")
-    )
+    protected = _optional_bool(_value(wlan, "wlan_wlan_fc_protected"))
     wlan_duration = _float(_value(wlan, "wlan_wlan_duration"))
     wlan_seq = _int(_value(wlan, "wlan_wlan_seq"))
     bssid = _value(wlan, "wlan_wlan_bssid")
     wlan_tag_length = _int(_value(wlan, "wlan_wlan_tag_length"))
 
     # Radiotap
-    signal = _float(
-        _value(radiotap, "radiotap_radiotap_dbm_antsignal")
-    )
-    data_rate = _float(
-        _value(radiotap, "radiotap_radiotap_datarate")
-    )
+    signal = _float(_value(radiotap, "radiotap_radiotap_dbm_antsignal"))
+    data_rate = _float(_value(radiotap, "radiotap_radiotap_datarate"))
     radio_frequency = _float(
         _value(radiotap, "radiotap_radiotap_channel_freq")
     )
@@ -323,7 +305,7 @@ def normalize_packet(packet_dict):
         return float(value) if value is not None else None
 
     packet = {
-        # Operational fields used by the live feature extractor
+        # Operational fields used by the feature extractor
         "timestamp": timestamp,
         "length": length,
         "retry": retry,
@@ -335,7 +317,7 @@ def normalize_packet(packet_dict):
         "bssid": bssid,
         "source": source,
         "destination": destination,
-        "dns": dns_present,
+        "dns": presence["dns"],
         "dns_transaction_id": dns_transaction_id,
         "dns_response": dns_response,
         "tcp_syn": tcp_syn,
@@ -344,26 +326,13 @@ def normalize_packet(packet_dict):
         "udp_destination_port": udp_dstport,
 
         # Layer presence indicators
-        "frame__present": float(frame_present),
-        "eth__present": float(eth_present),
-        "ip__present": float(ip_present),
-        "ipv6__present": float(ipv6_present),
-        "tcp__present": float(tcp_present),
-        "udp__present": float(udp_present),
-        "dns__present": float(dns_present),
-        "arp__present": float(arp_present),
-        "wlan__present": float(wlan_present),
-        "radiotap__present": float(radiotap_present),
-        "wlan_radio__present": float(wlan_radio_present),
-        "tls__present": float(tls_present),
-        "http__present": float(http_present),
-        "ssdp__present": float(ssdp_present),
-        "llc__present": float(llc_present),
+        **{
+            f"{name}__present": float(value)
+            for name, value in presence.items()
+        },
 
         # Frame
-        "frame.len": (
-            float(length) if length is not None else None
-        ),
+        "frame.len": float(length) if length is not None else None,
         "frame.time_delta": frame_time_delta,
         "frame.time_delta_displayed": frame_time_delta_displayed,
 
@@ -377,20 +346,14 @@ def normalize_packet(packet_dict):
         # WLAN
         "wlan.duration": wlan_duration,
         "wlan.fc.protected": numeric_bool(protected),
-        "wlan.fc.type": (
-            float(frame_type) if frame_type is not None else None
-        ),
+        "wlan.fc.type": float(frame_type) if frame_type is not None else None,
         "wlan.fc.retry": numeric_bool(retry),
         "wlan.fc.subtype": (
-            float(frame_subtype)
-            if frame_subtype is not None else None
+            float(frame_subtype) if frame_subtype is not None else None
         ),
-        "wlan.seq": (
-            float(wlan_seq) if wlan_seq is not None else None
-        ),
+        "wlan.seq": float(wlan_seq) if wlan_seq is not None else None,
         "wlan.tag.length": (
-            float(wlan_tag_length)
-            if wlan_tag_length is not None else None
+            float(wlan_tag_length) if wlan_tag_length is not None else None
         ),
 
         # WLAN radio
@@ -405,41 +368,26 @@ def normalize_packet(packet_dict):
         "wlan_radio.end_tsf": wlan_radio_end_tsf,
 
         # IPv4
-        "ip.proto": (
-            float(ip_proto) if ip_proto is not None else None
-        ),
+        "ip.proto": float(ip_proto) if ip_proto is not None else None,
         "ip.ttl": float(ip_ttl) if ip_ttl is not None else None,
-        "ip.version": (
-            float(ip_version) if ip_version is not None else None
-        ),
+        "ip.version": float(ip_version) if ip_version is not None else None,
 
-        # IPv6: extra fields, not substitutes for IPv4 model fields
+        # IPv6
         "ipv6.nxt": (
-            float(ipv6_next_header)
-            if ipv6_next_header is not None else None
+            float(ipv6_next_header) if ipv6_next_header is not None else None
         ),
         "ipv6.hlim": (
-            float(ipv6_hop_limit)
-            if ipv6_hop_limit is not None else None
+            float(ipv6_hop_limit) if ipv6_hop_limit is not None else None
         ),
         "ipv6.version": (
-            float(ipv6_version)
-            if ipv6_version is not None else None
+            float(ipv6_version) if ipv6_version is not None else None
         ),
 
         # TCP
-        "tcp.ack": (
-            float(tcp_ack) if tcp_ack is not None else None
-        ),
-        "tcp.ack_raw": (
-            float(tcp_ack_raw) if tcp_ack_raw is not None else None
-        ),
-        "tcp.seq": (
-            float(tcp_seq) if tcp_seq is not None else None
-        ),
-        "tcp.seq_raw": (
-            float(tcp_seq_raw) if tcp_seq_raw is not None else None
-        ),
+        "tcp.ack": float(tcp_ack) if tcp_ack is not None else None,
+        "tcp.ack_raw": float(tcp_ack_raw) if tcp_ack_raw is not None else None,
+        "tcp.seq": float(tcp_seq) if tcp_seq is not None else None,
+        "tcp.seq_raw": float(tcp_seq_raw) if tcp_seq_raw is not None else None,
         "tcp.srcport": (
             float(tcp_srcport) if tcp_srcport is not None else None
         ),
@@ -454,12 +402,9 @@ def normalize_packet(packet_dict):
         "tcp.flags.push": numeric_bool(tcp_push),
         "tcp.flags.reset": numeric_bool(tcp_rst),
         "tcp.option_len": (
-            float(tcp_option_len)
-            if tcp_option_len is not None else None
+            float(tcp_option_len) if tcp_option_len is not None else None
         ),
-        "tcp.analysis.retransmission": numeric_bool(
-            tcp_retransmission
-        ),
+        "tcp.analysis.retransmission": numeric_bool(tcp_retransmission),
 
         # UDP
         "udp.srcport": (
@@ -468,16 +413,12 @@ def normalize_packet(packet_dict):
         "udp.dstport": (
             float(udp_dstport) if udp_dstport is not None else None
         ),
-        "udp.length": (
-            float(udp_length) if udp_length is not None else None
-        ),
+        "udp.length": float(udp_length) if udp_length is not None else None,
         "udp.time_delta": udp_time_delta,
         "udp.time_relative": udp_time_relative,
 
         # ARP
-        "arp.opcode": (
-            float(arp_opcode) if arp_opcode is not None else None
-        ),
+        "arp.opcode": float(arp_opcode) if arp_opcode is not None else None,
         "arp.src.proto_ipv4": arp_src_proto_ipv4,
         "arp.dst.proto_ipv4": arp_dst_proto_ipv4,
 
@@ -491,17 +432,13 @@ def normalize_packet(packet_dict):
         "http.request.version": http_request_version,
 
         # Presence indicators
-        "http.request.method__present": float(
-            bool(http_request_method)
-        ),
-        "tls.record.version__present": float(tls_present),
-        "ip.version__present": float(ip_present),
+        "http.request.method__present": float(bool(http_request_method)),
+        "tls.record.version__present": float(presence["tls"]),
+        "ip.version__present": float(presence["ip"]),
         "tcp.analysis__present": float(tcp_analysis_present),
-        "tcp.analysis.flags__present": float(
-            tcp_analysis_flags_present
-        ),
+        "tcp.analysis.flags__present": float(tcp_analysis_flags_present),
 
-        # Preserve original TShark layers for further extraction
+        # Preserve original layers for further extraction
         "layers": layers,
     }
 
@@ -516,25 +453,15 @@ class TSharkCapture:
         self._process = None
 
     def packets(self):
-        """
-        Yield normalized packets from TShark's EK JSON output.
-
-        Stop iteration or close the generator to terminate TShark.
-        """
+        """Yield normalized packets from TShark EK JSON output."""
         if self._process is not None and self._process.poll() is None:
             raise RuntimeError("TShark capture is already running.")
 
-        cmd = [
-            "tshark",
-            "-i", self.interface,
-            "-T", "ek",
-            "-l",
-        ]
+        cmd = ["tshark", "-i", self.interface, "-T", "ek", "-l"]
 
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            # Prevent a full stderr pipe from blocking the process.
             stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
@@ -549,7 +476,6 @@ class TSharkCapture:
 
             for line in process.stdout:
                 line = line.strip()
-
                 if not line:
                     continue
 
@@ -562,10 +488,7 @@ class TSharkCapture:
                     continue
 
                 # EK metadata records are not packet records.
-                if "index" in data:
-                    continue
-
-                if "layers" not in data:
+                if "index" in data or "layers" not in data:
                     continue
 
                 yield normalize_packet(data)
@@ -588,7 +511,6 @@ class TSharkCapture:
     def stop(self):
         """Request termination of the running TShark process."""
         process = self._process
-
         if process is not None and process.poll() is None:
             process.terminate()
 

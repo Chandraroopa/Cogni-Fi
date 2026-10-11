@@ -1,3 +1,4 @@
+
 import argparse
 
 from backend.capture.adapter import TSharkCapture
@@ -7,9 +8,9 @@ from backend.capture.feature_window import (
 )
 
 
-def run_live_capture(interface: str = "1"):
+def run_live_capture(interface: str = "5"):
     capture = TSharkCapture(interface=interface)
-    windows = CausalWindowManager(window_size=1.0)
+    window_manager = CausalWindowManager(window_size=1.0)
     extractor = FeatureExtractor(window_size=1.0)
 
     packet_count = 0
@@ -24,8 +25,13 @@ def run_live_capture(interface: str = "1"):
         for window in completed_windows:
             packets = window["packets"]
 
-            # Extract operational features from this window's packets.
-            features = extractor.extract_window_features(packets)
+            if not packets:
+                continue
+
+            features = extractor.extract_window_features(
+                packets,
+                duration=1.0,
+            )
             window_count += 1
 
             print(
@@ -40,8 +46,7 @@ def run_live_capture(interface: str = "1"):
         for packet in capture.packets():
             packet_count += 1
 
-            # Each packet must have a valid timestamp.
-            process_windows(windows.add_packet(packet))
+            process_windows(window_manager.add_packet(packet))
 
             if packet_count % 100 == 0:
                 print(f"Packets captured: {packet_count}")
@@ -53,24 +58,30 @@ def run_live_capture(interface: str = "1"):
         print(f"\nCapture stopped: {exc}")
 
     finally:
-        capture.stop()
+        try:
+            capture.stop()
+        except Exception as exc:
+            print(f"[TShark] Stop error: {exc}")
 
-        # Process the final partial window before exiting.
-        process_windows(windows.flush())
+        process_windows(window_manager.flush())
 
         print(f"\nTotal packets captured: {packet_count}")
         print(f"Feature windows processed: {window_count}")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
-        description="Cogni-Fi packet capture and feature extraction"
+        description="Cogni-Fi live packet feature extraction"
     )
     parser.add_argument(
         "--interface",
-        default="1",
-        help="TShark interface name or number (default: 1)",
+        default="5",
+        help="TShark interface name or number (default: 5)",
     )
-    args = parser.parse_args()
 
+    args = parser.parse_args()
     run_live_capture(args.interface)
+
+
+if __name__ == "__main__":
+    main()

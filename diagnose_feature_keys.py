@@ -19,7 +19,7 @@ try:
     aggregates = aggregator.aggregate([packet])
     print("\nAggregator keys:", sorted(aggregates.keys()))
 
-    combined = {**features, **aggregates}
+    combined = {**packet, **features, **aggregates}
     print("\nCombined feature count:", len(combined))
     print("Schema feature count:", len(adapter.binary_features))
 
