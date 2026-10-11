@@ -1,25 +1,37 @@
+
 from statistics import mean, pstdev
+import math
 
 
 def _safe_float(value, default=0.0):
-    try:
-        if value is None or value == "":
-            return default
-
-        return float(value)
-
-    except (TypeError, ValueError):
+    """Convert a value to a finite float, or return default."""
+    if value is None or value == "":
         return default
+
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+    return result if math.isfinite(result) else default
 
 
 def _safe_int(value, default=0):
+    """Convert a value to an integer, or return default."""
+    if value is None or value == "":
+        return default
+
     try:
-        if value is None or value == "":
-            return default
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
 
-        return int(float(value))
+    if not math.isfinite(result):
+        return default
 
-    except (TypeError, ValueError):
+    try:
+        return int(result)
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
@@ -31,132 +43,115 @@ def _std(values):
     return pstdev(values) if len(values) > 1 else 0.0
 
 
+def _numeric_value(value):
+    """Return a finite float, preserving zero; return None if unavailable."""
+    if value is None or value == "":
+        return None
+
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    return result if math.isfinite(result) else None
+
+
 class WindowFeatureEngineer:
     """
-    Converts one causal packet window into engineered features.
+    Extract operational and behavioral features from normalized packets.
 
-    Input:
-        A list of normalized packets produced by TSharkCapture.
+    Availability indicators are diagnostic only. They are not part of
+    the frozen binary or multiclass ML schemas.
 
-    Output:
-        A dictionary containing currently implemented base and
-        behavioral features.
-
-    Important:
-        This class does NOT create fake values for unavailable
-        Wi-Fi/radiotap information.
-
-        The current Windows adapter captures Ethernet/IP traffic,
-        so raw 802.11-specific fields may legitimately be zero.
+    A zero-valued measurement is preserved when it is explicitly present.
+    Missing values are not interpreted as measured values by the
+    availability diagnostics.
     """
 
-    # =============================================================
-    # Basic helpers
-    # =============================================================
-
     def _get_timestamp(self, packet):
-        return _safe_float(
-            packet.get("timestamp")
-        )
+        return _numeric_value(packet.get("timestamp"))
 
-    # =============================================================
-    # Behavioral feature: IAT
-    # =============================================================
+    def _ordered_packets(self, packets):
+        """Sort packets chronologically, keeping untimestamped packets last."""
+        indexed = list(enumerate(packets))
+
+        def sort_key(item):
+            index, packet = item
+            timestamp = self._get_timestamp(packet)
+
+            return (
+                timestamp is None,
+                timestamp if timestamp is not None else 0.0,
+                index,
+            )
+
+        return [
+            packet
+            for _, packet in sorted(indexed, key=sort_key)
+        ]
+
+    @staticmethod
+    def _field_value(packet, field):
+        return _numeric_value(packet.get(field))
+
+    @classmethod
+    def _field_available(cls, packet, field):
+        return cls._field_value(packet, field) is not None
+
+    # -------------------------------------------------------------
+    # Behavioral feature: inter-arrival time
+    # -------------------------------------------------------------
 
     def _behavior_iat(self, packets):
-        """
-        Mean inter-arrival time for packets in this window.
-        """
-
-        timestamps = sorted(
+        timestamps = [
             self._get_timestamp(packet)
             for packet in packets
+        ]
+
+        timestamps = sorted(
+            timestamp
+            for timestamp in timestamps
+            if timestamp is not None
         )
 
         if len(timestamps) < 2:
             return 0.0
 
-        deltas = []
-
-        for index in range(1, len(timestamps)):
-
-            delta = (
-                timestamps[index]
-                - timestamps[index - 1]
-            )
-
-            if delta >= 0:
-                deltas.append(delta)
+        deltas = [
+            timestamps[i] - timestamps[i - 1]
+            for i in range(1, len(timestamps))
+            if timestamps[i] >= timestamps[i - 1]
+        ]
 
         return _mean(deltas)
 
-    # =============================================================
-    # Behavioral feature: TCP sequence delta by flow
-    # =============================================================
+    # -------------------------------------------------------------
+    # Behavioral feature: TCP sequence delta by directional flow
+    # -------------------------------------------------------------
 
     def _behavior_tcp_seq_delta_flow(self, packets):
-        """
-        Mean TCP sequence-number delta within each directional flow.
-
-        Flow identity:
-
-            source
-            destination
-            TCP source port
-            TCP destination port
-        """
-
         previous_seq = {}
         deltas = []
 
-        ordered_packets = sorted(
-            packets,
-            key=self._get_timestamp
-        )
+        for packet in self._ordered_packets(packets):
+            source = packet.get("source")
+            destination = packet.get("destination")
 
-        for packet in ordered_packets:
+            source_port = _safe_int(packet.get("tcp.srcport"))
+            destination_port = _safe_int(packet.get("tcp.dstport"))
 
-            source = packet.get(
-                "source"
-            )
-
-            destination = packet.get(
-                "destination"
-            )
-
-            source_port = _safe_int(
-                packet.get("tcp.srcport")
-            )
-
-            destination_port = _safe_int(
-                packet.get("tcp.dstport")
-            )
-
-            sequence = packet.get(
-                "tcp.seq"
-            )
-
-            # Not a usable TCP flow.
             if not source or not destination:
                 continue
 
-            if source_port == 0:
+            if source_port <= 0 or destination_port <= 0:
                 continue
 
-            if destination_port == 0:
-                continue
+            # Zero is a valid sequence value; only missing/invalid values
+            # should be skipped.
+            sequence = _numeric_value(packet.get("tcp.seq"))
 
-            if sequence in (
-                None,
-                "",
-                0,
-                "0",
-            ):
+            if sequence is None:
                 continue
-
-            sequence = _safe_float(
-                sequence
-            )
 
             flow = (
                 str(source),
@@ -166,13 +161,8 @@ class WindowFeatureEngineer:
             )
 
             if flow in previous_seq:
+                delta = sequence - previous_seq[flow]
 
-                delta = (
-                    sequence
-                    - previous_seq[flow]
-                )
-
-                # Ignore backwards sequence movement.
                 if delta >= 0:
                     deltas.append(delta)
 
@@ -180,66 +170,35 @@ class WindowFeatureEngineer:
 
         return _mean(deltas)
 
-    # =============================================================
-    # Behavioral feature: TCP ACK delta by flow
-    # =============================================================
+    # -------------------------------------------------------------
+    # Behavioral feature: TCP ACK delta by directional flow
+    # -------------------------------------------------------------
 
     def _behavior_tcp_ack_delta_flow(self, packets):
-        """
-        Mean TCP acknowledgement-number delta within each
-        directional flow.
-        """
-
         previous_ack = {}
         deltas = []
 
-        ordered_packets = sorted(
-            packets,
-            key=self._get_timestamp
-        )
+        for packet in self._ordered_packets(packets):
+            source = packet.get("source")
+            destination = packet.get("destination")
 
-        for packet in ordered_packets:
-
-            source = packet.get(
-                "source"
-            )
-
-            destination = packet.get(
-                "destination"
-            )
-
-            source_port = _safe_int(
-                packet.get("tcp.srcport")
-            )
-
-            destination_port = _safe_int(
-                packet.get("tcp.dstport")
-            )
-
-            acknowledgement = packet.get(
-                "tcp.ack_raw"
-            )
+            source_port = _safe_int(packet.get("tcp.srcport"))
+            destination_port = _safe_int(packet.get("tcp.dstport"))
 
             if not source or not destination:
                 continue
 
-            if source_port == 0:
+            if source_port <= 0 or destination_port <= 0:
                 continue
 
-            if destination_port == 0:
-                continue
-
-            if acknowledgement in (
-                None,
-                "",
-                0,
-                "0",
-            ):
-                continue
-
-            acknowledgement = _safe_float(
-                acknowledgement
+            # Zero is preserved if explicitly present. Whether the ACK
+            # field is meaningful for a packet depends on TCP flags.
+            acknowledgement = _numeric_value(
+                packet.get("tcp.ack_raw")
             )
+
+            if acknowledgement is None:
+                continue
 
             flow = (
                 str(source),
@@ -249,11 +208,7 @@ class WindowFeatureEngineer:
             )
 
             if flow in previous_ack:
-
-                delta = (
-                    acknowledgement
-                    - previous_ack[flow]
-                )
+                delta = acknowledgement - previous_ack[flow]
 
                 if delta >= 0:
                     deltas.append(delta)
@@ -262,61 +217,29 @@ class WindowFeatureEngineer:
 
         return _mean(deltas)
 
-    # =============================================================
+    # -------------------------------------------------------------
     # Behavioral feature: WLAN sequence delta by sender
-    # =============================================================
+    # -------------------------------------------------------------
 
     def _behavior_wlan_seq_delta_sender(self, packets):
-        """
-        Mean WLAN sequence-number delta for each sender.
-
-        The current Windows capture does not expose raw 802.11
-        sequence numbers, so this will normally be 0.0 here.
-
-        It is intentionally NOT replaced with a fake value.
-        """
-
         previous_seq = {}
         deltas = []
 
-        ordered_packets = sorted(
-            packets,
-            key=self._get_timestamp
-        )
-
-        for packet in ordered_packets:
-
-            sender = packet.get(
-                "source"
-            )
-
-            sequence_value = packet.get(
-                "wlan.seq"
-            )
+        for packet in self._ordered_packets(packets):
+            sender = packet.get("source")
 
             if not sender:
                 continue
 
-            if sequence_value in (
-                None,
-                "",
-                0,
-                "0",
-            ):
-                continue
+            sequence = _numeric_value(packet.get("wlan.seq"))
 
-            sequence = _safe_float(
-                sequence_value
-            )
+            if sequence is None:
+                continue
 
             sender = str(sender)
 
             if sender in previous_seq:
-
-                delta = (
-                    sequence
-                    - previous_seq[sender]
-                )
+                delta = sequence - previous_seq[sender]
 
                 if delta >= 0:
                     deltas.append(delta)
@@ -325,36 +248,21 @@ class WindowFeatureEngineer:
 
         return _mean(deltas)
 
-    # =============================================================
+    # -------------------------------------------------------------
     # Main extraction
-    # =============================================================
+    # -------------------------------------------------------------
 
     def extract(self, packets):
-
         if not packets:
             return {}
 
-        # ---------------------------------------------------------
-        # Chronological ordering
-        # ---------------------------------------------------------
-
-        packets = sorted(
-            packets,
-            key=self._get_timestamp
-        )
-
+        packets = self._ordered_packets(packets)
         result = {}
-
         packet_count = len(packets)
 
-        # ---------------------------------------------------------
-        # Packet / byte statistics
-        # ---------------------------------------------------------
-
+        # Packet and byte statistics.
         lengths = [
-            _safe_float(
-                packet.get("frame.len")
-            )
+            _safe_float(packet.get("frame.len"))
             for packet in packets
         ]
 
@@ -363,522 +271,291 @@ class WindowFeatureEngineer:
             for packet in packets
         ]
 
-        result["packet_count"] = float(
-            packet_count
+        valid_timestamps = sorted(
+            timestamp
+            for timestamp in timestamps
+            if timestamp is not None
         )
 
-        result["byte_count"] = float(
-            sum(lengths)
-        )
+        result["packet_count"] = float(packet_count)
+        result["byte_count"] = float(sum(lengths))
+        result["packet_size_mean"] = _mean(lengths)
+        result["packet_size_std"] = _std(lengths)
 
-        result["packet_size_mean"] = _mean(
-            lengths
-        )
+        # Inter-arrival statistics. Packets without timestamps are omitted.
+        iats = [
+            valid_timestamps[i] - valid_timestamps[i - 1]
+            for i in range(1, len(valid_timestamps))
+            if valid_timestamps[i] >= valid_timestamps[i - 1]
+        ]
 
-        result["packet_size_std"] = _std(
-            lengths
-        )
+        result["iat_mean"] = _mean(iats)
+        result["iat_std"] = _std(iats)
 
-        # ---------------------------------------------------------
-        # IAT
-        # ---------------------------------------------------------
+        # Diagnostic availability indicators.
+        wifi_fields = {
+            "wifi_retry_available": "wlan.fc.retry",
+            "wifi_protected_available": "wlan.fc.protected",
+            "wifi_management_frames_available": "wlan.fc.type",
+            "wifi_signal_available": "radiotap.dbm_antsignal",
+            "wifi_data_rate_available": "radiotap.datarate",
+            "wifi_bssid_available": "bssid",
+            "wifi_sequence_available": "wlan.seq",
+        }
 
-        iats = []
-
-        for index in range(1, len(timestamps)):
-
-            delta = (
-                timestamps[index]
-                - timestamps[index - 1]
-            )
-
-            if delta >= 0:
-                iats.append(delta)
-
-        result["iat_mean"] = _mean(
-            iats
-        )
-
-        result["iat_std"] = _std(
-            iats
-        )
-
-        # ---------------------------------------------------------
-        # WLAN retry / protected
-        # ---------------------------------------------------------
-
-        retry_count = 0
-        protected_count = 0
-
-        for packet in packets:
-
-            retry = _safe_float(
-                packet.get(
-                    "wlan.fc.retry"
+        for output_name, field_name in wifi_fields.items():
+            result[output_name] = float(
+                any(
+                    self._field_available(packet, field_name)
+                    for packet in packets
                 )
             )
 
-            protected = _safe_float(
-                packet.get(
-                    "wlan.fc.protected"
-                )
-            )
+        # WLAN retry and protection rates, calculated over packets
+        # where the corresponding field is actually available.
+        retry_values = [
+            self._field_value(packet, "wlan.fc.retry")
+            for packet in packets
+        ]
+        retry_values = [
+            value for value in retry_values if value is not None
+        ]
 
-            if retry > 0:
-                retry_count += 1
-
-            if protected > 0:
-                protected_count += 1
+        protected_values = [
+            self._field_value(packet, "wlan.fc.protected")
+            for packet in packets
+        ]
+        protected_values = [
+            value for value in protected_values if value is not None
+        ]
 
         result["retry_rate"] = (
-            retry_count / packet_count
+            sum(value > 0 for value in retry_values) / len(retry_values)
+            if retry_values else 0.0
         )
 
         result["protected_rate"] = (
-            protected_count / packet_count
+            sum(value > 0 for value in protected_values)
+            / len(protected_values)
+            if protected_values else 0.0
         )
 
-        # ---------------------------------------------------------
-        # WLAN frame types
-        # ---------------------------------------------------------
-
-        frame_types = [
-            _safe_int(
-                packet.get("wlan.fc.type")
-            )
+        # WLAN frame subtype rates, calculated over packets where both
+        # frame type and subtype are available.
+        valid_frame_packets = [
+            packet
             for packet in packets
+            if (
+                self._field_available(packet, "wlan.fc.type")
+                and self._field_available(packet, "wlan.fc.subtype")
+            )
         ]
 
-        frame_subtypes = [
-            _safe_int(
-                packet.get("wlan.fc.subtype")
+        def frame_rate(type_value, subtype_value):
+            if not valid_frame_packets:
+                return 0.0
+
+            count = sum(
+                _safe_int(packet.get("wlan.fc.type")) == type_value
+                and _safe_int(packet.get("wlan.fc.subtype")) == subtype_value
+                for packet in valid_frame_packets
             )
-            for packet in packets
-        ]
 
-        def frame_rate(
-            type_value,
-            subtype_value
-        ):
+            return count / len(valid_frame_packets)
 
-            count = 0
+        result["beacon_rate"] = frame_rate(0, 8)
+        result["probe_response_rate"] = frame_rate(0, 5)
+        result["deauth_rate"] = frame_rate(0, 12)
+        result["disassoc_rate"] = frame_rate(0, 10)
 
-            for frame_type, subtype in zip(
-                frame_types,
-                frame_subtypes
-            ):
-
-                if (
-                    frame_type == type_value
-                    and subtype == subtype_value
-                ):
-                    count += 1
-
-            return count / packet_count
-
-        result["beacon_rate"] = frame_rate(
-            0,
-            8
-        )
-
-        result["probe_response_rate"] = frame_rate(
-            0,
-            5
-        )
-
-        result["deauth_rate"] = frame_rate(
-            0,
-            12
-        )
-
-        result["disassoc_rate"] = frame_rate(
-            0,
-            10
-        )
-
-        # ---------------------------------------------------------
-        # Signal strength
-        # ---------------------------------------------------------
-
+        # Signal strength: preserve explicitly reported zero values.
         signals = []
 
         for packet in packets:
+            value = self._field_value(packet, "radiotap.dbm_antsignal")
 
-            value = packet.get(
-                "radiotap.dbm_antsignal"
-            )
+            if value is None:
+                value = _numeric_value(packet.get("signal"))
 
-            if value in (
-                None,
-                "",
-                0,
-                "0",
-            ):
-                value = packet.get(
-                    "signal"
-                )
-
-            value = _safe_float(
-                value
-            )
-
-            if value != 0:
+            if value is not None:
                 signals.append(value)
 
-        result["signal_mean"] = _mean(
-            signals
-        )
+        result["signal_mean"] = _mean(signals)
+        result["signal_std"] = _std(signals)
 
-        result["signal_std"] = _std(
-            signals
-        )
-
-        # ---------------------------------------------------------
-        # Data rate
-        # ---------------------------------------------------------
-
+        # Data rate: preserve explicitly reported zero values.
         data_rates = []
 
         for packet in packets:
+            value = self._field_value(packet, "radiotap.datarate")
 
-            value = packet.get(
-                "radiotap.datarate"
-            )
+            if value is None:
+                value = _numeric_value(packet.get("data_rate"))
 
-            if value in (
-                None,
-                "",
-                0,
-                "0",
-            ):
-                value = packet.get(
-                    "data_rate"
-                )
-
-            value = _safe_float(
-                value
-            )
-
-            if value != 0:
+            if value is not None:
                 data_rates.append(value)
 
-        result["data_rate_mean"] = _mean(
-            data_rates
-        )
+        result["data_rate_mean"] = _mean(data_rates)
+        result["data_rate_std"] = _std(data_rates)
 
-        result["data_rate_std"] = _std(
-            data_rates
-        )
+        # Address cardinality.
+        bssids = {
+            str(packet["bssid"])
+            for packet in packets
+            if packet.get("bssid")
+        }
 
-        # ---------------------------------------------------------
-        # Address cardinality
-        # ---------------------------------------------------------
+        sources = {
+            str(packet["source"])
+            for packet in packets
+            if packet.get("source")
+        }
 
-        bssids = set()
-        sources = set()
-        destinations = set()
+        destinations = {
+            str(packet["destination"])
+            for packet in packets
+            if packet.get("destination")
+        }
 
-        for packet in packets:
+        result["unique_bssid_count"] = float(len(bssids))
+        result["unique_source_count"] = float(len(sources))
+        result["unique_destination_count"] = float(len(destinations))
 
-            # These are the normalized fields from adapter.py.
-            bssid = packet.get(
-                "bssid"
-            )
-
-            source = packet.get(
-                "source"
-            )
-
-            destination = packet.get(
-                "destination"
-            )
-
-            if bssid:
-                bssids.add(
-                    str(bssid)
-                )
-
-            if source:
-                sources.add(
-                    str(source)
-                )
-
-            if destination:
-                destinations.add(
-                    str(destination)
-                )
-
-        result["unique_bssid_count"] = float(
-            len(bssids)
-        )
-
-        result["unique_source_count"] = float(
-            len(sources)
-        )
-
-        result["unique_destination_count"] = float(
-            len(destinations)
-        )
-
-        # ---------------------------------------------------------
-        # DNS
-        # ---------------------------------------------------------
-
+        # DNS counts and transaction latency.
         dns_requests = 0
         dns_responses = 0
-
         dns_requests_by_id = {}
         dns_latencies = []
 
         for packet in packets:
-
             if not packet.get("dns"):
                 continue
 
-            transaction_id = packet.get(
-                "dns_transaction_id"
-            )
+            timestamp = self._get_timestamp(packet)
 
-            timestamp = self._get_timestamp(
-                packet
-            )
+            if timestamp is None:
+                continue
 
-            is_response = bool(
-                packet.get(
-                    "dns_response"
-                )
-            )
+            transaction_id = packet.get("dns_transaction_id")
+            is_response = bool(packet.get("dns_response"))
 
             if is_response:
-
                 dns_responses += 1
 
                 if transaction_id is not None:
-
-                    transaction_id = str(
-                        transaction_id
-                    )
-
-                    request_time = (
-                        dns_requests_by_id.get(
-                            transaction_id
-                        )
+                    request_time = dns_requests_by_id.get(
+                        str(transaction_id)
                     )
 
                     if request_time is not None:
-
-                        latency = (
-                            timestamp
-                            - request_time
-                        )
+                        latency = timestamp - request_time
 
                         if latency >= 0:
-                            dns_latencies.append(
-                                latency
-                            )
-
+                            dns_latencies.append(latency)
             else:
-
                 dns_requests += 1
 
                 if transaction_id is not None:
+                    dns_requests_by_id[str(transaction_id)] = timestamp
 
-                    dns_requests_by_id[
-                        str(transaction_id)
-                    ] = timestamp
+        result["dns_request_count"] = float(dns_requests)
+        result["dns_response_count"] = float(dns_responses)
+        result["dns_latency_mean"] = _mean(dns_latencies)
+        result["dns_latency_std"] = _std(dns_latencies)
 
-        result["dns_request_count"] = float(
-            dns_requests
-        )
+        # TCP rates over packets where each corresponding field exists.
+        syn_values = [
+            self._field_value(packet, "tcp.flags.syn")
+            for packet in packets
+        ]
+        syn_values = [
+            value for value in syn_values if value is not None
+        ]
 
-        result["dns_response_count"] = float(
-            dns_responses
-        )
+        rst_values = [
+            self._field_value(packet, "tcp.flags.reset")
+            for packet in packets
+        ]
+        rst_values = [
+            value for value in rst_values if value is not None
+        ]
 
-        result["dns_latency_mean"] = _mean(
-            dns_latencies
-        )
-
-        result["dns_latency_std"] = _std(
-            dns_latencies
-        )
-
-        # ---------------------------------------------------------
-        # TCP
-        # ---------------------------------------------------------
-
-        syn_count = 0
-        rst_count = 0
-        retransmission_count = 0
-
-        for packet in packets:
-
-            syn = _safe_float(
-                packet.get(
-                    "tcp.flags.syn"
-                )
-            )
-
-            rst = _safe_float(
-                packet.get(
-                    "tcp.flags.reset"
-                )
-            )
-
-            retransmission = packet.get(
-                "tcp.analysis.retransmission"
-            )
-
-            if syn > 0:
-                syn_count += 1
-
-            if rst > 0:
-                rst_count += 1
-
-            if retransmission not in (
-                None,
-                "",
-                False,
-                0,
-                0.0,
-                "0",
-                "False",
-            ):
-                retransmission_count += 1
+        retransmission_values = [
+            packet.get("tcp.analysis.retransmission")
+            for packet in packets
+            if packet.get("tcp.analysis.retransmission") is not None
+            and packet.get("tcp.analysis.retransmission") != ""
+        ]
 
         result["syn_rate"] = (
-            syn_count / packet_count
+            sum(value > 0 for value in syn_values) / len(syn_values)
+            if syn_values else 0.0
         )
 
         result["rst_rate"] = (
-            rst_count / packet_count
+            sum(value > 0 for value in rst_values) / len(rst_values)
+            if rst_values else 0.0
         )
+
+        def is_true_retransmission(value):
+            if isinstance(value, bool):
+                return value
+
+            if isinstance(value, (int, float)):
+                return value != 0
+
+            return str(value).strip().lower() in ("true", "1", "1.0", "yes")
 
         result["retransmission_rate"] = (
-            retransmission_count
-            / packet_count
+            sum(
+                is_true_retransmission(value)
+                for value in retransmission_values
+            ) / len(retransmission_values)
+            if retransmission_values else 0.0
         )
 
-        # ---------------------------------------------------------
-        # UDP
-        # ---------------------------------------------------------
-
+        # UDP packet rate: count packets with at least one usable UDP field.
         udp_packets = []
 
         for packet in packets:
-
-            src_port = packet.get(
-                "udp.srcport"
-            )
-
-            dst_port = packet.get(
-                "udp.dstport"
-            )
-
-            udp_length = packet.get(
-                "udp.length"
-            )
-
-            has_udp = (
-                src_port not in (
-                    None,
-                    "",
-                    0,
-                    "0",
-                )
-                or
-                dst_port not in (
-                    None,
-                    "",
-                    0,
-                    "0",
-                )
-                or
-                udp_length not in (
-                    None,
-                    "",
-                    0,
-                    "0",
+            has_udp = any(
+                self._field_available(packet, field)
+                for field in (
+                    "udp.srcport",
+                    "udp.dstport",
+                    "udp.length",
                 )
             )
 
             if has_udp:
-                udp_packets.append(
-                    packet
-                )
+                udp_packets.append(packet)
 
-        result["udp_packet_rate"] = (
-            len(udp_packets)
-            / packet_count
-        )
+        result["udp_packet_rate"] = len(udp_packets) / packet_count
 
-        # ---------------------------------------------------------
-        # Unique UDP destination ports
-        # ---------------------------------------------------------
+        udp_destination_ports = {
+            _safe_int(packet.get("udp.dstport"))
+            for packet in udp_packets
+            if self._field_available(packet, "udp.dstport")
+            and _safe_int(packet.get("udp.dstport")) > 0
+        }
 
-        udp_destination_ports = set()
-
-        for packet in udp_packets:
-
-            port = packet.get(
-                "udp.dstport"
-            )
-
-            if port in (
-                None,
-                "",
-                0,
-                "0",
-            ):
-                continue
-
-            port = _safe_int(
-                port
-            )
-
-            if port > 0:
-                udp_destination_ports.add(
-                    port
-                )
-
-        result[
-            "unique_udp_destination_ports"
-        ] = float(
+        result["unique_udp_destination_ports"] = float(
             len(udp_destination_ports)
         )
 
-        # =========================================================
-        # Behavioral features
-        # =========================================================
+        # Behavioral features.
+        result["behavior_iat"] = self._behavior_iat(packets)
 
-        result["behavior_iat"] = (
-            self._behavior_iat(
-                packets
-            )
+        result["behavior_tcp_seq_delta_flow"] = (
+            self._behavior_tcp_seq_delta_flow(packets)
         )
 
-        result[
-            "behavior_tcp_seq_delta_flow"
-        ] = (
-            self._behavior_tcp_seq_delta_flow(
-                packets
-            )
+        result["behavior_tcp_ack_delta_flow"] = (
+            self._behavior_tcp_ack_delta_flow(packets)
         )
 
-        result[
-            "behavior_tcp_ack_delta_flow"
-        ] = (
-            self._behavior_tcp_ack_delta_flow(
-                packets
-            )
-        )
-
-        result[
-            "behavior_wlan_seq_delta_sender"
-        ] = (
-            self._behavior_wlan_seq_delta_sender(
-                packets
-            )
+        result["behavior_wlan_seq_delta_sender"] = (
+            self._behavior_wlan_seq_delta_sender(packets)
         )
 
         return result

@@ -1,13 +1,14 @@
 import unittest
-import os
-import pandas as pd
+
 from backend.capture.feature_adapter import FeatureAdapter
-from ml.predictor import CognifiPredictor
+
 
 class TestFeatureAdapter(unittest.TestCase):
     def setUp(self):
         self.adapter = FeatureAdapter(ml_dir="ml")
-        # Mock 30 foundational base features outputted by feature_window.py
+
+        # Deliberately incomplete input: missing model features must
+        # be rejected rather than filled with fabricated values.
         self.sample_base_features = {
             "packet_count": 25.0,
             "byte_count": 5000.0,
@@ -21,31 +22,55 @@ class TestFeatureAdapter(unittest.TestCase):
             "tcp.srcport": 54321.0,
             "udp.dstport": 53.0,
             "udp.srcport": 1234.0,
-            "udp.length": 64.0
+            "udp.length": 64.0,
         }
 
-    def test_binary_feature_count_and_order(self):
-        df_binary = self.adapter.adapt_for_binary(self.sample_base_features)
-        self.assertEqual(len(df_binary.columns), 82)
-        self.assertEqual(list(df_binary.columns), self.adapter.binary_features)
+    def test_binary_rejects_missing_features(self):
+        with self.assertRaisesRegex(ValueError, "missing or invalid"):
+            self.adapter.adapt_for_binary(self.sample_base_features)
 
-    def test_multiclass_feature_count_and_order(self):
-        df_multi = self.adapter.adapt_for_multiclass(self.sample_base_features)
-        self.assertEqual(len(df_multi.columns), 81)
-        self.assertEqual(list(df_multi.columns), self.adapter.multiclass_features)
+    def test_multiclass_rejects_missing_features(self):
+        with self.assertRaisesRegex(ValueError, "missing or invalid"):
+            self.adapter.adapt_for_multiclass(self.sample_base_features)
 
-    def test_end_to_end_prediction(self):
-        predictor = CognifiPredictor(base_dir="ml")
-        
-        df_binary = self.adapter.adapt_for_binary(self.sample_base_features)
-        df_multi = self.adapter.adapt_for_multiclass(self.sample_base_features)
-        
-        binary_res = predictor.predict_binary(df_binary)
-        multi_res = predictor.predict_multiclass(df_multi)
-        
-        self.assertIn("is_threat", binary_res)
-        self.assertIn("predicted_class", multi_res)
-        print("[TEST PASSED] End-to-end integration with CognifiPredictor successful!")
+    def test_binary_schema_has_82_features(self):
+        self.assertEqual(len(self.adapter.binary_features), 82)
+
+    def test_multiclass_schema_has_81_features(self):
+        self.assertEqual(len(self.adapter.multiclass_features), 81)
+
+    def test_binary_rejects_nan(self):
+        features = {
+            feature: 1.0 for feature in self.adapter.binary_features
+        }
+        features[self.adapter.binary_features[0]] = float("nan")
+
+        with self.assertRaisesRegex(ValueError, "missing or invalid"):
+            self.adapter.adapt_for_binary(features)
+
+    def test_binary_rejects_infinity(self):
+        features = {
+            feature: 1.0 for feature in self.adapter.binary_features
+        }
+        features[self.adapter.binary_features[0]] = float("inf")
+
+        with self.assertRaisesRegex(ValueError, "missing or invalid"):
+            self.adapter.adapt_for_binary(features)
+
+    def test_binary_preserves_feature_order(self):
+        features = {
+            feature: float(index)
+            for index, feature in enumerate(self.adapter.binary_features)
+        }
+
+        result = self.adapter.adapt_for_binary(features)
+
+        self.assertEqual(
+            list(result.columns),
+            self.adapter.binary_features,
+        )
+        self.assertEqual(result.shape, (1, 82))
+
 
 if __name__ == "__main__":
     unittest.main()

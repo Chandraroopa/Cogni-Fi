@@ -1,5 +1,6 @@
-import subprocess
+
 import json
+import subprocess
 from datetime import datetime
 
 
@@ -17,113 +18,118 @@ def _value(layer, key, default=None):
 
 
 def _float(value, default=None):
-    """Convert a value to float without turning missing values into zero."""
+    """Convert a value to float without inventing missing values."""
     try:
-        return float(value)
-    except (ValueError, TypeError):
+        result = float(value)
+        return result if result == result and abs(result) != float("inf") else default
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
 def _int(value, default=None):
-    """Convert a value to int without turning missing values into zero."""
+    """Convert a numeric value to int."""
     try:
         return int(float(value))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return default
 
 
-def _bool(value):
-    """Safely convert a TShark value to bool."""
+def _optional_bool(value):
+    """Preserve unavailable boolean fields as None."""
+    if value is None or value == "":
+        return None
+
     if isinstance(value, bool):
         return value
 
-    if value is None:
-        return False
-
-    return str(value).lower() in {
-        "1",
-        "true",
-        "yes",
-        "set",
+    return str(value).strip().lower() in {
+        "1", "true", "yes", "set"
     }
 
 
 def _timestamp(packet_dict, frame):
-    """
-    Prefer TShark frame.time_epoch when available.
+    """Read a TShark epoch timestamp, with a safe fallback."""
+    raw_epoch = _value(frame, "frame_frame_time_epoch")
 
-    Falls back to EK top-level millisecond timestamp.
-    """
+    if raw_epoch is not None:
+        value = _float(raw_epoch)
 
-    raw_epoch = _value(
-        frame,
-        "frame_frame_time_epoch",
-        None,
-    )
+        if value is not None:
+            # Epoch timestamps are usually seconds; some sources use ms.
+            if value > 10_000_000_000:
+                value /= 1000.0
+            return value
 
-    if raw_epoch:
         try:
             iso = str(raw_epoch).replace("Z", "+00:00")
             return datetime.fromisoformat(iso).timestamp()
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError, OSError):
             pass
 
     raw = packet_dict.get("timestamp")
 
     if raw not in (None, ""):
-        try:
-            value = float(raw)
+        value = _float(raw)
 
+        if value is not None:
             if value > 10_000_000_000:
-                return value / 1000.0
-
+                value /= 1000.0
             return value
 
-        except (ValueError, TypeError):
+        try:
+            iso = str(raw).replace("Z", "+00:00")
+            return datetime.fromisoformat(iso).timestamp()
+        except (ValueError, TypeError, OverflowError, OSError):
             pass
 
-    return 0.0
+    # None indicates that the timestamp was unavailable.
+    return None
 
 
 def normalize_packet(packet_dict):
     """
-    Convert TShark -T ek output into the normalized packet format.
+    Normalize one TShark EK JSON packet.
 
-    Important semantic rule:
-
-        Missing TShark field -> None
-
-        Actual TShark value of 0 -> 0
-
-    This distinction is required by the feature aggregation layer.
-    A missing UDP field must not be confused with a real UDP value of 0.
+    Missing optional fields remain None.
+    IPv4 and IPv6 fields remain separate.
+    The original TShark layers are retained for additional extraction.
     """
-
     layers = packet_dict.get("layers", {})
 
     if not isinstance(layers, dict):
         layers = {}
 
-    frame = layers.get("frame", {})
-    eth = layers.get("eth", {})
-    ip = layers.get("ip", {})
-    ipv6 = layers.get("ipv6", {})
-    tcp = layers.get("tcp", {})
-    udp = layers.get("udp", {})
-    dns = layers.get("dns", {})
-    arp = layers.get("arp", {})
-    wlan = layers.get("wlan", {})
-    radiotap = layers.get("radiotap", {})
-    wlan_radio = layers.get("wlan_radio", {})
-    tls = layers.get("tls", {})
-    http = layers.get("http", {})
-    ssdp = layers.get("ssdp", {})
-    llc = layers.get("llc", {})
+    layer_names = (
+        "frame", "eth", "ip", "ipv6", "tcp", "udp", "dns",
+        "arp", "wlan", "radiotap", "wlan_radio", "tls",
+        "http", "ssdp", "llc",
+    )
 
-    # =========================================================
-    # LAYER PRESENCE
-    # =========================================================
+    normalized_layers = {}
 
+    for name in layer_names:
+        layer = layers.get(name, {})
+        normalized_layers[name] = (
+            layer if isinstance(layer, dict) else {}
+        )
+
+    frame = normalized_layers["frame"]
+    eth = normalized_layers["eth"]
+    ip = normalized_layers["ip"]
+    ipv6 = normalized_layers["ipv6"]
+    tcp = normalized_layers["tcp"]
+    udp = normalized_layers["udp"]
+    dns = normalized_layers["dns"]
+    arp = normalized_layers["arp"]
+    wlan = normalized_layers["wlan"]
+    radiotap = normalized_layers["radiotap"]
+    wlan_radio = normalized_layers["wlan_radio"]
+    tls = normalized_layers["tls"]
+    http = normalized_layers["http"]
+    ssdp = normalized_layers["ssdp"]
+    llc = normalized_layers["llc"]
+
+    # Layer presence
     frame_present = bool(frame)
     eth_present = bool(eth)
     ip_present = bool(ip)
@@ -140,264 +146,79 @@ def normalize_packet(packet_dict):
     ssdp_present = bool(ssdp)
     llc_present = bool(llc)
 
-    # =========================================================
-    # TIMESTAMP
-    # =========================================================
-
+    # Frame
     timestamp = _timestamp(packet_dict, frame)
-
-    # =========================================================
-    # FRAME
-    # =========================================================
-
-    length = _int(
-        _value(
-            frame,
-            "frame_frame_len",
-            None,
-        )
-    )
-
+    length = _int(_value(frame, "frame_frame_len"))
     frame_time_delta = _float(
-        _value(
-            frame,
-            "frame_frame_time_delta",
-            None,
-        )
+        _value(frame, "frame_frame_time_delta")
     )
-
     frame_time_delta_displayed = _float(
-        _value(
-            frame,
-            "frame_frame_time_delta_displayed",
-            None,
-        )
+        _value(frame, "frame_frame_time_delta_displayed")
     )
-
     frame_time_relative = _float(
-        _value(
-            frame,
-            "frame_frame_time_relative",
-            None,
-        )
+        _value(frame, "frame_frame_time_relative")
     )
 
-    # =========================================================
-    # ETHERNET
-    # =========================================================
+    # Ethernet and network addresses
+    eth_source = _value(eth, "eth_eth_src")
+    eth_destination = _value(eth, "eth_eth_dst")
 
-    eth_source = _value(
-        eth,
-        "eth_eth_src",
-        None,
-    )
+    ip_source = _value(ip, "ip_ip_src")
+    ip_destination = _value(ip, "ip_ip_dst")
+    ipv6_source = _value(ipv6, "ipv6_ipv6_src")
+    ipv6_destination = _value(ipv6, "ipv6_ipv6_dst")
 
-    eth_destination = _value(
-        eth,
-        "eth_eth_dst",
-        None,
-    )
-
-    # =========================================================
-    # IPv4 / IPv6
-    #
-    # IMPORTANT:
-    # We do not silently convert IPv6 values into IPv4 fields.
-    # The frozen ML semantics must not be invented here.
-    # =========================================================
-
-    ip_source = _value(
-        ip,
-        "ip_ip_src",
-        None,
-    )
-
-    ip_destination = _value(
-        ip,
-        "ip_ip_dst",
-        None,
-    )
-
-    ipv6_source = _value(
-        ipv6,
-        "ipv6_ipv6_src",
-        None,
-    )
-
-    ipv6_destination = _value(
-        ipv6,
-        "ipv6_ipv6_dst",
-        None,
-    )
-
-    source = (
-        ip_source
-        or ipv6_source
-        or eth_source
-        or None
-    )
-
+    source = ip_source or ipv6_source or eth_source
     destination = (
-        ip_destination
-        or ipv6_destination
-        or eth_destination
-        or None
+        ip_destination or ipv6_destination or eth_destination
     )
 
-    ip_proto = _int(
-        _value(
-            ip,
-            "ip_ip_proto",
-            None,
-        )
-    )
+    # IPv4 fields: do not populate them from IPv6 packets.
+    ip_proto = _int(_value(ip, "ip_ip_proto"))
+    ip_ttl = _int(_value(ip, "ip_ip_ttl"))
+    ip_version = _int(_value(ip, "ip_ip_version"))
 
-    ip_ttl = _int(
-        _value(
-            ip,
-            "ip_ip_ttl",
-            None,
-        )
-    )
+    # IPv6-specific fields
+    ipv6_next_header = _int(_value(ipv6, "ipv6_ipv6_nxt"))
+    ipv6_hop_limit = _int(_value(ipv6, "ipv6_ipv6_hlim"))
+    ipv6_version = _int(_value(ipv6, "ipv6_ipv6_version"))
 
-    ip_version = _int(
-        _value(
-            ip,
-            "ip_ip_version",
-            None,
-        )
-    )
-
-    # =========================================================
     # TCP
-    # =========================================================
-
-    tcp_srcport = _int(
-        _value(
-            tcp,
-            "tcp_tcp_srcport",
-            None,
-        )
-    )
-
-    tcp_dstport = _int(
-        _value(
-            tcp,
-            "tcp_tcp_dstport",
-            None,
-        )
-    )
-
-    tcp_seq = _int(
-        _value(
-            tcp,
-            "tcp_tcp_seq",
-            None,
-        )
-    )
-
-    tcp_seq_raw = _int(
-        _value(
-            tcp,
-            "tcp_tcp_seq_raw",
-            None,
-        )
-    )
-
-    tcp_ack = _int(
-        _value(
-            tcp,
-            "tcp_tcp_ack",
-            None,
-        )
-    )
-
-    tcp_ack_raw = _int(
-        _value(
-            tcp,
-            "tcp_tcp_ack_raw",
-            None,
-        )
-    )
-
-    tcp_time_delta = _float(
-        _value(
-            tcp,
-            "tcp_tcp_time_delta",
-            None,
-        )
-    )
-
+    tcp_srcport = _int(_value(tcp, "tcp_tcp_srcport"))
+    tcp_dstport = _int(_value(tcp, "tcp_tcp_dstport"))
+    tcp_seq = _int(_value(tcp, "tcp_tcp_seq"))
+    tcp_seq_raw = _int(_value(tcp, "tcp_tcp_seq_raw"))
+    tcp_ack = _int(_value(tcp, "tcp_tcp_ack"))
+    tcp_ack_raw = _int(_value(tcp, "tcp_tcp_ack_raw"))
+    tcp_time_delta = _float(_value(tcp, "tcp_tcp_time_delta"))
     tcp_time_relative = _float(
-        _value(
-            tcp,
-            "tcp_tcp_time_relative",
-            None,
-        )
+        _value(tcp, "tcp_tcp_time_relative")
+    )
+    tcp_option_len = _int(_value(tcp, "tcp_tcp_hdr_len"))
+
+    tcp_syn = _optional_bool(_value(tcp, "tcp_tcp_flags_syn"))
+    tcp_ack_flag = _optional_bool(_value(tcp, "tcp_tcp_flags_ack"))
+    tcp_fin = _optional_bool(_value(tcp, "tcp_tcp_flags_fin"))
+    tcp_push = _optional_bool(_value(tcp, "tcp_tcp_flags_push"))
+    tcp_rst = _optional_bool(_value(tcp, "tcp_tcp_flags_reset"))
+
+    retransmission_keys = (
+        "tcp_analysis_retransmission",
+        "tcp_analysis_fast_retransmission",
+        "tcp_analysis_lost_segment",
     )
 
-    tcp_option_len = _int(
-        _value(
-            tcp,
-            "tcp_tcp_hdr_len",
-            None,
-        )
-    )
+    retransmission_values = [
+        _optional_bool(_value(tcp, key))
+        for key in retransmission_keys
+    ]
 
-    tcp_syn = _bool(
-        _value(
-            tcp,
-            "tcp_tcp_flags_syn",
-            None,
-        )
-    )
-
-    tcp_ack_flag = _bool(
-        _value(
-            tcp,
-            "tcp_tcp_flags_ack",
-            None,
-        )
-    )
-
-    tcp_fin = _bool(
-        _value(
-            tcp,
-            "tcp_tcp_flags_fin",
-            None,
-        )
-    )
-
-    tcp_push = _bool(
-        _value(
-            tcp,
-            "tcp_tcp_flags_push",
-            None,
-        )
-    )
-
-    tcp_rst = _bool(
-        _value(
-            tcp,
-            "tcp_tcp_flags_reset",
-            None,
-        )
-    )
-
-    tcp_retransmission = any(
-        _bool(
-            _value(
-                tcp,
-                key,
-                None,
-            )
-        )
-        for key in (
-            "tcp_analysis_retransmission",
-            "tcp_analysis_fast_retransmission",
-            "tcp_analysis_lost_segment",
-        )
-    )
+    if any(value is True for value in retransmission_values):
+        tcp_retransmission = True
+    elif any(value is not None for value in retransmission_values):
+        tcp_retransmission = False
+    else:
+        tcp_retransmission = None
 
     tcp_analysis_present = (
         "tcp_tcp_analysis" in tcp
@@ -409,357 +230,120 @@ def normalize_packet(packet_dict):
         for key in tcp
     )
 
-    # =========================================================
     # UDP
-    # =========================================================
-
-    udp_srcport = _int(
-        _value(
-            udp,
-            "udp_udp_srcport",
-            None,
-        )
-    )
-
-    udp_dstport = _int(
-        _value(
-            udp,
-            "udp_udp_dstport",
-            None,
-        )
-    )
-
-    udp_length = _int(
-        _value(
-            udp,
-            "udp_udp_length",
-            None,
-        )
-    )
-
-    udp_time_delta = _float(
-        _value(
-            udp,
-            "udp_udp_time_delta",
-            None,
-        )
-    )
-
+    udp_srcport = _int(_value(udp, "udp_udp_srcport"))
+    udp_dstport = _int(_value(udp, "udp_udp_dstport"))
+    udp_length = _int(_value(udp, "udp_udp_length"))
+    udp_time_delta = _float(_value(udp, "udp_udp_time_delta"))
     udp_time_relative = _float(
-        _value(
-            udp,
-            "udp_udp_time_relative",
-            None,
-        )
+        _value(udp, "udp_udp_time_relative")
     )
 
-    # =========================================================
     # DNS
-    # =========================================================
-
-    dns_transaction_id = _value(
-        dns,
-        "dns_dns_id",
-        None,
+    dns_transaction_id = _value(dns, "dns_dns_id")
+    dns_response = _optional_bool(
+        _value(dns, "dns_dns_flags_response")
     )
 
-    dns_response = _bool(
-        _value(
-            dns,
-            "dns_dns_flags_response",
-            None,
-        )
-    )
-
-    # =========================================================
     # ARP
-    # =========================================================
+    arp_opcode = _int(_value(arp, "arp_arp_opcode"))
+    arp_src_proto_ipv4 = _value(arp, "arp_arp_src_proto_ipv4")
+    arp_dst_proto_ipv4 = _value(arp, "arp_arp_dst_proto_ipv4")
 
-    arp_opcode = _int(
-        _value(
-            arp,
-            "arp_arp_opcode",
-            None,
-        )
-    )
-
-    arp_src_proto_ipv4 = _value(
-        arp,
-        "arp_arp_src_proto_ipv4",
-        None,
-    )
-
-    arp_dst_proto_ipv4 = _value(
-        arp,
-        "arp_arp_dst_proto_ipv4",
-        None,
-    )
-
-    # =========================================================
     # 802.11
-    # =========================================================
-
-    frame_type = _int(
-        _value(
-            wlan,
-            "wlan_wlan_fc_type",
-            None,
-        )
+    frame_type = _int(_value(wlan, "wlan_wlan_fc_type"))
+    frame_subtype = _int(_value(wlan, "wlan_wlan_fc_subtype"))
+    retry = _optional_bool(_value(wlan, "wlan_wlan_fc_retry"))
+    protected = _optional_bool(
+        _value(wlan, "wlan_wlan_fc_protected")
     )
+    wlan_duration = _float(_value(wlan, "wlan_wlan_duration"))
+    wlan_seq = _int(_value(wlan, "wlan_wlan_seq"))
+    bssid = _value(wlan, "wlan_wlan_bssid")
+    wlan_tag_length = _int(_value(wlan, "wlan_wlan_tag_length"))
 
-    frame_subtype = _int(
-        _value(
-            wlan,
-            "wlan_wlan_fc_subtype",
-            None,
-        )
-    )
-
-    retry = _bool(
-        _value(
-            wlan,
-            "wlan_wlan_fc_retry",
-            None,
-        )
-    )
-
-    protected = _bool(
-        _value(
-            wlan,
-            "wlan_wlan_fc_protected",
-            None,
-        )
-    )
-
-    wlan_duration = _float(
-        _value(
-            wlan,
-            "wlan_wlan_duration",
-            None,
-        )
-    )
-
-    wlan_seq = _int(
-        _value(
-            wlan,
-            "wlan_wlan_seq",
-            None,
-        )
-    )
-
-    bssid = _value(
-        wlan,
-        "wlan_wlan_bssid",
-        None,
-    )
-
-    wlan_tag_length = _int(
-        _value(
-            wlan,
-            "wlan_wlan_tag_length",
-            None,
-        )
-    )
-
-    # =========================================================
-    # RADIOTAP
-    # =========================================================
-
+    # Radiotap
     signal = _float(
-        _value(
-            radiotap,
-            "radiotap_radiotap_dbm_antsignal",
-            None,
-        )
+        _value(radiotap, "radiotap_radiotap_dbm_antsignal")
     )
-
     data_rate = _float(
-        _value(
-            radiotap,
-            "radiotap_radiotap_datarate",
-            None,
-        )
+        _value(radiotap, "radiotap_radiotap_datarate")
     )
-
     radio_frequency = _float(
-        _value(
-            radiotap,
-            "radiotap_radiotap_channel_freq",
-            None,
-        )
+        _value(radiotap, "radiotap_radiotap_channel_freq")
     )
-
     radio_channel_ofdm = _float(
-        _value(
-            radiotap,
-            "radiotap_radiotap_channel_flags_ofdm",
-            None,
-        )
+        _value(radiotap, "radiotap_radiotap_channel_flags_ofdm")
     )
-
     radiotap_length = _float(
-        _value(
-            radiotap,
-            "radiotap_radiotap_length",
-            None,
-        )
+        _value(radiotap, "radiotap_radiotap_length")
     )
 
-    # =========================================================
-    # WLAN RADIO
-    # =========================================================
-
+    # WLAN radio
     wlan_radio_signal = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_signal_dbm",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_signal_dbm")
     )
-
     wlan_radio_data_rate = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_data_rate",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_data_rate")
     )
-
     wlan_radio_duration = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_duration",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_duration")
     )
-
-    wlan_radio_phy = _value(
-        wlan_radio,
-        "wlan_radio_wlan_radio_phy",
-        None,
-    )
-
+    wlan_radio_phy = _value(wlan_radio, "wlan_radio_wlan_radio_phy")
     wlan_radio_channel = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_channel",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_channel")
     )
-
     wlan_radio_frequency = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_frequency",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_frequency")
     )
-
     wlan_radio_timestamp = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_timestamp",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_timestamp")
     )
-
     wlan_radio_start_tsf = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_start_tsf",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_start_tsf")
     )
-
     wlan_radio_end_tsf = _float(
-        _value(
-            wlan_radio,
-            "wlan_radio_wlan_radio_end_tsf",
-            None,
-        )
+        _value(wlan_radio, "wlan_radio_wlan_radio_end_tsf")
     )
 
-    # =========================================================
     # TLS
-    # =========================================================
-
     tls_record_version = _float(
-        _value(
-            tls,
-            "tls_tls_record_version",
-            None,
-        )
+        _value(tls, "tls_tls_record_version")
     )
 
-    # =========================================================
     # HTTP
-    # =========================================================
-
-    http_request_method = _value(
-        http,
-        "http_http_request_method",
-        None,
-    )
-
+    http_request_method = _value(http, "http_http_request_method")
     http_content_length = _float(
-        _value(
-            http,
-            "http_http_content_length",
-            None,
-        )
+        _value(http, "http_http_content_length")
     )
+    http_content_type = _value(http, "http_http_content_type")
+    http_request_version = _value(http, "http_http_request_version")
 
-    http_content_type = _value(
-        http,
-        "http_http_content_type",
-        None,
-    )
-
-    http_request_version = _value(
-        http,
-        "http_http_request_version",
-        None,
-    )
-
-    # =========================================================
-    # NORMALIZED PACKET
-    # =========================================================
+    def numeric_bool(value):
+        return float(value) if value is not None else None
 
     packet = {
-        # =====================================================
-        # Existing normalized fields
-        # =====================================================
-
+        # Operational fields used by the live feature extractor
         "timestamp": timestamp,
         "length": length,
-
         "retry": retry,
         "protected": protected,
-
         "frame_type": frame_type,
         "frame_subtype": frame_subtype,
-
         "signal": signal,
         "data_rate": data_rate,
-
         "bssid": bssid,
         "source": source,
         "destination": destination,
-
         "dns": dns_present,
         "dns_transaction_id": dns_transaction_id,
         "dns_response": dns_response,
-
         "tcp_syn": tcp_syn,
         "tcp_rst": tcp_rst,
         "tcp_retransmission": tcp_retransmission,
-
         "udp_destination_port": udp_dstport,
 
-        # =====================================================
-        # Layer presence
-        # =====================================================
-
+        # Layer presence indicators
         "frame__present": float(frame_present),
         "eth__present": float(eth_present),
         "ip__present": float(ip_present),
@@ -776,75 +360,40 @@ def normalize_packet(packet_dict):
         "ssdp__present": float(ssdp_present),
         "llc__present": float(llc_present),
 
-        # =====================================================
-        # Frozen / raw feature fields
-        # =====================================================
-
+        # Frame
         "frame.len": (
-            float(length)
-            if length is not None
-            else None
+            float(length) if length is not None else None
         ),
-
         "frame.time_delta": frame_time_delta,
         "frame.time_delta_displayed": frame_time_delta_displayed,
 
-        # -----------------------------------------------------
         # Radiotap
-        # -----------------------------------------------------
-
         "radiotap.channel.flags.ofdm": radio_channel_ofdm,
         "radiotap.channel.freq": radio_frequency,
         "radiotap.datarate": data_rate,
         "radiotap.dbm_antsignal": signal,
         "radiotap.length": radiotap_length,
 
-        # -----------------------------------------------------
         # WLAN
-        # -----------------------------------------------------
-
         "wlan.duration": wlan_duration,
-
-        "wlan.fc.protected": (
-            float(protected)
-            if wlan_present
-            else None
-        ),
-
+        "wlan.fc.protected": numeric_bool(protected),
         "wlan.fc.type": (
-            float(frame_type)
-            if frame_type is not None
-            else None
+            float(frame_type) if frame_type is not None else None
         ),
-
-        "wlan.fc.retry": (
-            float(retry)
-            if wlan_present
-            else None
-        ),
-
+        "wlan.fc.retry": numeric_bool(retry),
         "wlan.fc.subtype": (
             float(frame_subtype)
-            if frame_subtype is not None
-            else None
+            if frame_subtype is not None else None
         ),
-
         "wlan.seq": (
-            float(wlan_seq)
-            if wlan_seq is not None
-            else None
+            float(wlan_seq) if wlan_seq is not None else None
         ),
-
         "wlan.tag.length": (
             float(wlan_tag_length)
-            if wlan_tag_length is not None
-            else None
+            if wlan_tag_length is not None else None
         ),
 
-        # -----------------------------------------------------
         # WLAN radio
-        # -----------------------------------------------------
-
         "wlan_radio.signal_dbm": wlan_radio_signal,
         "wlan_radio.data_rate": wlan_radio_data_rate,
         "wlan_radio.duration": wlan_radio_duration,
@@ -855,198 +404,104 @@ def normalize_packet(packet_dict):
         "wlan_radio.start_tsf": wlan_radio_start_tsf,
         "wlan_radio.end_tsf": wlan_radio_end_tsf,
 
-        # -----------------------------------------------------
-        # IP
-        # -----------------------------------------------------
-
+        # IPv4
         "ip.proto": (
-            float(ip_proto)
-            if ip_proto is not None
-            else None
+            float(ip_proto) if ip_proto is not None else None
         ),
-
-        "ip.ttl": (
-            float(ip_ttl)
-            if ip_ttl is not None
-            else None
-        ),
-
+        "ip.ttl": float(ip_ttl) if ip_ttl is not None else None,
         "ip.version": (
-            float(ip_version)
-            if ip_version is not None
-            else None
+            float(ip_version) if ip_version is not None else None
         ),
 
-        # -----------------------------------------------------
+        # IPv6: extra fields, not substitutes for IPv4 model fields
+        "ipv6.nxt": (
+            float(ipv6_next_header)
+            if ipv6_next_header is not None else None
+        ),
+        "ipv6.hlim": (
+            float(ipv6_hop_limit)
+            if ipv6_hop_limit is not None else None
+        ),
+        "ipv6.version": (
+            float(ipv6_version)
+            if ipv6_version is not None else None
+        ),
+
         # TCP
-        # -----------------------------------------------------
-
         "tcp.ack": (
-            float(tcp_ack)
-            if tcp_ack is not None
-            else None
+            float(tcp_ack) if tcp_ack is not None else None
         ),
-
         "tcp.ack_raw": (
-            float(tcp_ack_raw)
-            if tcp_ack_raw is not None
-            else None
+            float(tcp_ack_raw) if tcp_ack_raw is not None else None
         ),
-
         "tcp.seq": (
-            float(tcp_seq)
-            if tcp_seq is not None
-            else None
+            float(tcp_seq) if tcp_seq is not None else None
         ),
-
         "tcp.seq_raw": (
-            float(tcp_seq_raw)
-            if tcp_seq_raw is not None
-            else None
+            float(tcp_seq_raw) if tcp_seq_raw is not None else None
         ),
-
         "tcp.srcport": (
-            float(tcp_srcport)
-            if tcp_srcport is not None
-            else None
+            float(tcp_srcport) if tcp_srcport is not None else None
         ),
-
         "tcp.dstport": (
-            float(tcp_dstport)
-            if tcp_dstport is not None
-            else None
+            float(tcp_dstport) if tcp_dstport is not None else None
         ),
-
         "tcp.time_delta": tcp_time_delta,
         "tcp.time_relative": tcp_time_relative,
-
-        "tcp.flags.syn": (
-            float(tcp_syn)
-            if tcp_present
-            else None
-        ),
-
-        "tcp.flags.ack": (
-            float(tcp_ack_flag)
-            if tcp_present
-            else None
-        ),
-
-        "tcp.flags.fin": (
-            float(tcp_fin)
-            if tcp_present
-            else None
-        ),
-
-        "tcp.flags.push": (
-            float(tcp_push)
-            if tcp_present
-            else None
-        ),
-
-        "tcp.flags.reset": (
-            float(tcp_rst)
-            if tcp_present
-            else None
-        ),
-
+        "tcp.flags.syn": numeric_bool(tcp_syn),
+        "tcp.flags.ack": numeric_bool(tcp_ack_flag),
+        "tcp.flags.fin": numeric_bool(tcp_fin),
+        "tcp.flags.push": numeric_bool(tcp_push),
+        "tcp.flags.reset": numeric_bool(tcp_rst),
         "tcp.option_len": (
             float(tcp_option_len)
-            if tcp_option_len is not None
-            else None
+            if tcp_option_len is not None else None
+        ),
+        "tcp.analysis.retransmission": numeric_bool(
+            tcp_retransmission
         ),
 
-        "tcp.analysis.retransmission": (
-            float(tcp_retransmission)
-            if tcp_present
-            else None
-        ),
-
-        # -----------------------------------------------------
         # UDP
-        # -----------------------------------------------------
-
         "udp.srcport": (
-            float(udp_srcport)
-            if udp_srcport is not None
-            else None
+            float(udp_srcport) if udp_srcport is not None else None
         ),
-
         "udp.dstport": (
-            float(udp_dstport)
-            if udp_dstport is not None
-            else None
+            float(udp_dstport) if udp_dstport is not None else None
         ),
-
         "udp.length": (
-            float(udp_length)
-            if udp_length is not None
-            else None
+            float(udp_length) if udp_length is not None else None
         ),
-
         "udp.time_delta": udp_time_delta,
         "udp.time_relative": udp_time_relative,
 
-        # -----------------------------------------------------
         # ARP
-        # -----------------------------------------------------
-
         "arp.opcode": (
-            float(arp_opcode)
-            if arp_opcode is not None
-            else None
+            float(arp_opcode) if arp_opcode is not None else None
         ),
-
         "arp.src.proto_ipv4": arp_src_proto_ipv4,
         "arp.dst.proto_ipv4": arp_dst_proto_ipv4,
 
-        # -----------------------------------------------------
         # TLS
-        # -----------------------------------------------------
-
         "tls.record.version": tls_record_version,
 
-        # -----------------------------------------------------
         # HTTP
-        # -----------------------------------------------------
-
         "http.request.method": http_request_method,
         "http.content_length": http_content_length,
         "http.content_type": http_content_type,
         "http.request.version": http_request_version,
 
-        # =====================================================
-        # Presence / active indicators
-        # =====================================================
-
-        "arp__present": float(arp_present),
-
-        "ssdp__present": float(ssdp_present),
-
+        # Presence indicators
         "http.request.method__present": float(
             bool(http_request_method)
         ),
-
-        "tls.record.version__present": float(
-            tls_present
-        ),
-
-        "ip.version__present": float(
-            ip_present
-        ),
-
-        "tcp.analysis__present": float(
-            tcp_analysis_present
-        ),
-
+        "tls.record.version__present": float(tls_present),
+        "ip.version__present": float(ip_present),
+        "tcp.analysis__present": float(tcp_analysis_present),
         "tcp.analysis.flags__present": float(
             tcp_analysis_flags_present
         ),
 
-        # =====================================================
-        # Raw TShark data
-        # =====================================================
-
+        # Preserve original TShark layers for further extraction
         "layers": layers,
     }
 
@@ -1054,41 +509,45 @@ def normalize_packet(packet_dict):
 
 
 class TSharkCapture:
-    """
-    Live TShark packet capture.
-
-    The interface is supplied by the caller; no machine-specific
-    interface is hardcoded here.
-    """
+    """Read live packets from a TShark-supported interface."""
 
     def __init__(self, interface):
         self.interface = str(interface)
+        self._process = None
 
     def packets(self):
+        """
+        Yield normalized packets from TShark's EK JSON output.
+
+        Stop iteration or close the generator to terminate TShark.
+        """
+        if self._process is not None and self._process.poll() is None:
+            raise RuntimeError("TShark capture is already running.")
+
         cmd = [
             "tshark",
-            "-i",
-            self.interface,
-            "-T",
-            "ek",
+            "-i", self.interface,
+            "-T", "ek",
             "-l",
         ]
 
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            # Prevent a full stderr pipe from blocking the process.
+            stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
+            bufsize=1,
         )
+        self._process = process
 
         try:
             if process.stdout is None:
                 return
 
             for line in process.stdout:
-
                 line = line.strip()
 
                 if not line:
@@ -1099,14 +558,21 @@ class TSharkCapture:
                 except json.JSONDecodeError:
                     continue
 
-                # TShark EK metadata records contain "index".
-                # They are not packet records.
+                if not isinstance(data, dict):
+                    continue
+
+                # EK metadata records are not packet records.
                 if "index" in data:
+                    continue
+
+                if "layers" not in data:
                     continue
 
                 yield normalize_packet(data)
 
         finally:
+            if process.stdout is not None:
+                process.stdout.close()
 
             if process.poll() is None:
                 process.terminate()
@@ -1116,3 +582,36 @@ class TSharkCapture:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+
+            self._process = None
+
+    def stop(self):
+        """Request termination of the running TShark process."""
+        process = self._process
+
+        if process is not None and process.poll() is None:
+            process.terminate()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Capture and normalize packets using TShark."
+    )
+    parser.add_argument(
+        "-i",
+        "--interface",
+        required=True,
+        help="Interface name or number recognized by TShark.",
+    )
+    args = parser.parse_args()
+
+    capture = TSharkCapture(args.interface)
+
+    try:
+        for packet in capture.packets():
+            print(json.dumps(packet, default=str))
+    except KeyboardInterrupt:
+        capture.stop()
+        print("\nCapture stopped.")

@@ -1,0 +1,204 @@
+
+import json
+import time
+from pathlib import Path
+
+from backend.capture.adapter import TSharkCapture
+from backend.capture.feature_window import (
+    CausalWindowManager,
+    FeatureExtractor,
+)
+from backend.capture.feature_adapter import FeatureAdapter
+from backend.capture.schema_aggregator import SchemaFeatureAggregator
+from backend.ml_service import CognifiMLService
+
+
+RESULTS_PATH = Path("live_ml_results.jsonl")
+CAPTURE_DURATION_SECONDS = 60
+
+
+def main():
+    interface = (
+        input(
+            "Enter TShark interface number (Wi-Fi is 5 on your PC): "
+        ).strip()
+        or "5"
+    )
+
+    capture = TSharkCapture(interface=interface)
+    windows = CausalWindowManager(window_size=1.0)
+    extractor = FeatureExtractor(window_size=1.0)
+    adapter = FeatureAdapter(ml_dir="ml")
+    schema_aggregator = SchemaFeatureAggregator()
+    ml = CognifiMLService()
+
+    packet_count = 0
+    window_count = 0
+    started = time.monotonic()
+
+    print(f"\nCapturing on interface {interface}.")
+    print("Generate normal traffic, e.g. open a few websites.")
+    print(f"Capture limit: {CAPTURE_DURATION_SECONDS} seconds.")
+    print("Press Ctrl+C to stop early.")
+    print(f"Results will be appended to: {RESULTS_PATH.resolve()}")
+
+    def process(completed):
+        nonlocal window_count
+
+        for window in completed:
+            packets = window.get("packets", [])
+
+            if not packets:
+                continue
+
+            window_count += 1
+
+            print(
+                f"\nWindow {window.get('window_id', 'unknown')}: "
+                f"{len(packets)} packets"
+            )
+
+            output = {
+                "window_id": window.get("window_id"),
+                "packet_count": len(packets),
+                "binary": None,
+                "multiclass": None,
+                "errors": [],
+            }
+
+            # Extract features from this completed causal window.
+            try:
+                features = extractor.extract_window_features(packets)
+                aggregate_features = schema_aggregator.aggregate(packets)
+                features.update(aggregate_features)
+            except Exception as exc:
+                message = (
+                    f"Feature extraction failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                output["errors"].append(message)
+                print(message)
+                _write_result(output)
+                continue
+
+            # Stage 1: binary Normal/Threat prediction.
+            try:
+                binary_input = adapter.adapt_for_binary(features)
+                binary_dict = binary_input.iloc[0].to_dict()
+
+                output["binary"] = ml.predict_binary(binary_dict)
+
+                print("Binary inference: ACCEPTED")
+                print(json.dumps(output["binary"], indent=2))
+
+            except Exception as exc:
+                message = (
+                    f"Binary inference failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                output["errors"].append(message)
+                print(message)
+
+                # Never run multiclass if binary inference failed.
+                _write_result(output)
+                continue
+
+            # Stage 2: classify the attack type only for a threat.
+            if output["binary"]["is_threat"]:
+                try:
+                    multiclass_input = adapter.adapt_for_multiclass(
+                        features
+                    )
+                    multiclass_dict = (
+                        multiclass_input.iloc[0].to_dict()
+                    )
+
+                    output["multiclass"] = ml.predict_multiclass(
+                        multiclass_dict
+                    )
+
+                    print("Multiclass inference: ACCEPTED")
+                    print(
+                        json.dumps(
+                            output["multiclass"],
+                            indent=2,
+                        )
+                    )
+
+                except Exception as exc:
+                    message = (
+                        f"Multiclass inference failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    output["errors"].append(message)
+                    print(message)
+            else:
+                print(
+                    "Multiclass skipped: binary result is Normal."
+                )
+
+            _write_result(output)
+
+    try:
+        for packet in capture.packets():
+            packet_count += 1
+
+            process(windows.add_packet(packet))
+
+            if (
+                time.monotonic() - started
+                >= CAPTURE_DURATION_SECONDS
+            ):
+                print("\nCapture time limit reached.")
+                break
+
+    except KeyboardInterrupt:
+        print("\nCapture interrupted by user.")
+
+    except Exception as exc:
+        print(
+            f"\nCapture error: {type(exc).__name__}: {exc}"
+        )
+
+    finally:
+        # Stop capture first so no more packets arrive while flushing.
+        try:
+            capture.stop()
+        except Exception as exc:
+            print(f"Capture cleanup warning: {exc}")
+
+        # Process any remaining packets in the final partial window.
+        try:
+            process(windows.flush())
+        except Exception as exc:
+            print(
+                f"Final window processing error: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        elapsed = time.monotonic() - started
+
+        print("\nCapture summary")
+        print(f"Packets captured: {packet_count}")
+        print(f"Feature windows processed: {window_count}")
+        print(f"Elapsed time: {elapsed:.1f} seconds")
+        print(f"Results file: {RESULTS_PATH.resolve()}")
+
+
+def _write_result(output):
+    """Append one result record to the JSON Lines file."""
+    try:
+        with RESULTS_PATH.open("a", encoding="utf-8") as file:
+            file.write(
+                json.dumps(output, default=str, allow_nan=False)
+                + "\n"
+            )
+    except (OSError, ValueError) as exc:
+        print(
+            f"Could not write results file: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+if __name__ == "__main__":
+    main()

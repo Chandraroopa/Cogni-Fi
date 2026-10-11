@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useContext,
@@ -15,57 +16,80 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if a Supabase session already exists
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsAuthenticated(!!session);
-      setLoading(false);
-    });
+    let mounted = true;
 
-    // Listen for login, logout, signup, etc.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setIsAuthenticated(!!session);
+      if (mounted) {
+        setUser(session?.user ?? null);
+        setIsAuthenticated(Boolean(session));
+        setLoading(false);
+      }
     });
 
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) throw error;
+
+        if (mounted) {
+          setUser(session?.user ?? null);
+          setIsAuthenticated(Boolean(session));
+        }
+      })
+      .catch((error) => {
+        console.error('Session check failed:', error);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
-  // Login with email and password
-  const login = async (email, password, rememberMe = false) => {
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  // Email and password login
+  const login = async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (error) throw new Error(error.message);
+    return data;
+  };
 
-    if (data.user) {
-      setUser(data.user);
-      setIsAuthenticated(true);
-    }
+  // Email and password signup
+  const signup = async (email, password, options = {}) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options,
+    });
 
+    if (error) throw new Error(error.message);
+    return data;
+  };
+
+  // Google sign-in
+  const signInWithGoogle = async () => {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) throw new Error(error.message);
     return data;
   };
 
   // Logout
   const logout = async () => {
     const { error } = await supabase.auth.signOut();
-
-    if (error) {
-      console.error('Logout error:', error);
-      return;
-    }
-
-    setUser(null);
-    setIsAuthenticated(false);
+    if (error) throw new Error(error.message);
   };
 
   return (
@@ -75,6 +99,8 @@ export function AuthProvider({ children }) {
         isAuthenticated,
         loading,
         login,
+        signup,
+        signInWithGoogle,
         logout,
       }}
     >
