@@ -1,0 +1,16 @@
+{
+  "0": "(Re)Assoc",
+  "1": "Botnet",
+  "2": "Deauth",
+  "3": "Disas",
+  "4": "Evil_Twin",
+  "5": "Kr00k",
+  "6": "Krack",
+  "7": "Malware",
+  "8": "Normal",
+  "9": "RogueAP",
+  "10": "SQL_Injection",
+  "11": "SSDP",
+  "12": "SSH",
+  "13": "Website_spoofing"
+}
