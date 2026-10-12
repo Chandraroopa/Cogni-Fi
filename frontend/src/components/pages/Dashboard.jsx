@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 function Dashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();  
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -140,7 +140,6 @@ const handleAnalyze = () => {
   const sidebarItems = [
     { label: 'Dashboard', icon: 'activity', active: true },
     { label: 'Wi-Fi Scan', icon: 'wifi' },
-    { label: 'Analysis', icon: 'activity' },
     { label: 'History', icon: 'history' },
     { label: 'Alerts', icon: 'bell' },
     { label: 'Settings', icon: 'settings' },
@@ -189,6 +188,8 @@ const handleAnalyze = () => {
                     setSidebarOpen(false);
                     if (item.label === 'Dashboard') navigate('/dashboard');
                     if (item.label === 'Wi-Fi Scan') navigate('/wifi-scan');
+                    if (item.label === 'History') navigate('/history');
+                    if (item.label === 'Alerts') navigate('/alerts');
                   }}
                   className={`group flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition ${item.active ? 'border border-cyan-400/20 bg-cyan-400/10 text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.06)]' : 'text-slate-400 hover:bg-white/[0.03] hover:text-white'}`}
                 >
@@ -199,14 +200,40 @@ const handleAnalyze = () => {
             </div>
           </nav>
 
-          <div className="border-t border-slate-800/70 p-4">
+                    <div className="border-t border-slate-800/70 p-4">
             <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-300"><Icon type="user" size={20} /></div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-300">
+                <Icon type="user" size={20} />
+              </div>
+
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">{user?.name || 'Bhoomika'}</p>
-                <p className="truncate text-xs text-slate-600">{user?.email || 'user@example.com'}</p>
+                <p className="truncate text-sm font-semibold text-white">
+                  {user?.user_metadata?.full_name ||
+                    user?.user_metadata?.name ||
+                    user?.email?.split('@')[0] ||
+                    'User'}
+                </p>
+                <p className="truncate text-xs text-slate-600">
+                  {user?.email || ''}
+                </p>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await logout();
+                  navigate('/login', { replace: true });
+                } catch (error) {
+                  console.error('Logout failed:', error);
+                }
+              }}
+              className="mt-3 flex w-full items-center gap-3 rounded-xl border border-red-500/20 px-4 py-3 text-sm font-medium text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+            >
+              <span className="text-lg">↪</span>
+              <span>Logout</span>
+            </button>
           </div>
         </div>
       </aside>
