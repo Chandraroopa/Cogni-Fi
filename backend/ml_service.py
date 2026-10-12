@@ -1,274 +1,116 @@
-"""
-CogniFi ML Service
+﻿"""Production service for Cogni-Fi's 30-feature multiclass model."""
 
-Production adapter between the backend and the frozen CogniFi ML package.
+from collections.abc import Mapping
+from typing import Any
 
-Responsibilities:
-- Validate ML feature inputs.
-- Run binary threat detection.
-- Run multiclass attack classification.
-- Return ML evidence for the Trust/Risk Engine.
+import math
+import numpy as np
+import pandas as pd
 
-This module does NOT calculate the final trust/risk score.
-"""
-
-from pathlib import Path
-from typing import Any, Dict, Mapping
-
-from ml.predictor import CognifiPredictor
+from ml.inference.predictor import load_predictor
 
 
 class MLInputError(ValueError):
-    """Raised when the supplied ML feature input is invalid."""
+    """Raised when the live ML feature payload is invalid."""
 
 
 class CognifiMLService:
-    """
-    Backend-facing service for the frozen CogniFi ML models.
+    def __init__(self):
+        # Load the model once, not for every captured window.
+        self.model, self.feature_names = load_predictor()
 
-    Binary model:
-        82 features
-        Normal / Threat
-        Threshold = 0.09
-
-    Multiclass model:
-        81 features
-        14 classes
-    """
-
-    def __init__(self, ml_dir: str | Path | None = None):
-        if ml_dir is None:
-            ml_dir = Path(__file__).resolve().parent.parent / "ml"
-
-        self.ml_dir = Path(ml_dir).resolve()
-
-        if not self.ml_dir.exists():
-            raise FileNotFoundError(
-                f"CogniFi ML directory not found: {self.ml_dir}"
+        if len(self.feature_names) != 30:
+            raise RuntimeError(
+                f"Expected 30 features, got {len(self.feature_names)}."
             )
 
-        self.predictor = CognifiPredictor(self.ml_dir)
+        if len(self.model.classes_) != 14:
+            raise RuntimeError(
+                f"Expected 14 classes, got {len(self.model.classes_)}."
+            )
 
-        self.binary_features = list(
-            self.predictor.binary.features
-        )
-
-        self.multiclass_features = list(
-            self.predictor.multiclass.features
-        )
-
-        self.binary_threshold = float(
-            self.predictor.binary.threshold
-        )
-
-        self.multiclass_classes = list(
-            self.predictor.multiclass.classes
-        )
-
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _validate_mapping(features: Mapping[str, Any]) -> None:
+    def analyze(self, features: Mapping[str, Any]) -> dict:
         if not isinstance(features, Mapping):
-            raise MLInputError(
-                "ML input must be a mapping/dictionary of feature names "
-                "to values."
-            )
-
-    def validate_binary_input(
-        self,
-        features: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-
-        self._validate_mapping(features)
+            raise MLInputError("Features must be a dictionary.")
 
         missing = [
-            name
-            for name in self.binary_features
+            name for name in self.feature_names
             if name not in features
         ]
-
         if missing:
             raise MLInputError(
-                "Binary ML input is missing required features: "
-                + ", ".join(missing)
+                f"Missing model features: {missing}"
             )
 
-        return {
-            name: features[name]
-            for name in self.binary_features
-        }
+        values = []
+        for name in self.feature_names:
+            value = features[name]
 
-    def validate_multiclass_input(
-        self,
-        features: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-
-        self._validate_mapping(features)
-
-        missing = [
-            name
-            for name in self.multiclass_features
-            if name not in features
-        ]
-
-        if missing:
-            raise MLInputError(
-                "Multiclass ML input is missing required features: "
-                + ", ".join(missing)
-            )
-
-        return {
-            name: features[name]
-            for name in self.multiclass_features
-        }
-
-    # ------------------------------------------------------------------
-    # Binary detection
-    # ------------------------------------------------------------------
-
-    def predict_binary(
-        self,
-        features: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-
-        prepared = self.validate_binary_input(features)
-
-        result = self.predictor.binary.predict(prepared)
-
-        return {
-            "is_threat": bool(result["is_threat"]),
-            "attack_probability": float(
-                result["attack_probability"]
-            ),
-            "normal_probability": float(
-                result["normal_probability"]
-            ),
-            "confidence": float(
-                result["confidence"]
-            ),
-            "threshold": float(
-                result["threshold"]
-            ),
-        }
-
-    # ------------------------------------------------------------------
-    # Multiclass classification
-    # ------------------------------------------------------------------
-
-    def predict_multiclass(
-        self,
-        features: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-
-        prepared = self.validate_multiclass_input(features)
-
-        result = self.predictor.multiclass.predict(prepared)
-
-        return {
-            "predicted_class": result["predicted_class"],
-            "class_id": int(result["class_id"]),
-            "confidence": float(result["confidence"]),
-            "class_probabilities": {
-                name: float(probability)
-                for name, probability
-                in result["class_probabilities"].items()
-            },
-        }
-
-    # ------------------------------------------------------------------
-    # Combined prediction
-    # ------------------------------------------------------------------
-
-    def analyze(
-        self,
-        binary_features: Mapping[str, Any],
-        multiclass_features: Mapping[str, Any] | None = None,
-    ) -> Dict[str, Any]:
-
-        binary_result = self.predict_binary(binary_features)
-
-        multiclass_result = None
-
-        # Only classify attack type when the binary detector
-        # identifies the window as a threat.
-        if binary_result["is_threat"]:
-
-            if multiclass_features is None:
+            if isinstance(value, (bool, np.bool_)):
                 raise MLInputError(
-                    "Multiclass features are required when "
-                    "binary detection identifies a threat."
+                    f"Feature {name!r} must be numeric, not Boolean."
                 )
 
-            multiclass_result = self.predict_multiclass(
-                multiclass_features
-            )
+            try:
+                value = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise MLInputError(
+                    f"Feature {name!r} is not numeric."
+                ) from exc
 
-        return {
-            "binary": binary_result,
-            "multiclass": multiclass_result,
+            if not math.isfinite(value):
+                raise MLInputError(
+                    f"Feature {name!r} is not finite."
+                )
+
+            values.append(value)
+
+        frame = pd.DataFrame(
+            [values],
+            columns=self.feature_names,
+            dtype=np.float64,
+        )
+
+        probabilities = self.model.predict_proba(frame)[0]
+        classes = [str(label) for label in self.model.classes_]
+
+        if not np.isfinite(probabilities).all():
+            raise RuntimeError("Model returned invalid probabilities.")
+
+        if not np.isclose(probabilities.sum(), 1.0, atol=1e-5):
+            raise RuntimeError("Model probabilities do not sum to 1.")
+
+        class_probabilities = {
+            label: float(probability)
+            for label, probability in zip(classes, probabilities)
         }
 
-    # ------------------------------------------------------------------
-    # Metadata / health information
-    # ------------------------------------------------------------------
+        best_index = int(np.argmax(probabilities))
+        predicted_class = classes[best_index]
+        normal_probability = class_probabilities.get("Normal", 0.0)
+        threat_probability = 1.0 - normal_probability
 
-    def metadata(self) -> Dict[str, Any]:
         return {
-            "binary": {
-                "feature_count": len(self.binary_features),
-                "threshold": self.binary_threshold,
-                "classes": ["Normal", "Threat"],
-            },
-            "multiclass": {
-                "feature_count": len(self.multiclass_features),
-                "class_count": len(self.multiclass_classes),
-                "classes": self.multiclass_classes,
-            },
+            "model_type": "multiclass_30",
+            "predicted_class": predicted_class,
+            "is_threat": predicted_class != "Normal",
+            "threat_type": (
+                predicted_class if predicted_class != "Normal" else None
+            ),
+            "confidence": float(probabilities[best_index]),
+            "threat_probability": float(threat_probability),
+            "normal_probability": float(normal_probability),
+            "class_probabilities": class_probabilities,
+            "model_features": len(self.feature_names),
+        }
+
+    def metadata(self) -> dict:
+        return {
+            "model_type": "multiclass_30",
+            "feature_count": len(self.feature_names),
+            "class_count": len(self.model.classes_),
+            "classes": [str(label) for label in self.model.classes_],
         }
 
 
-# Singleton-style service for backend use.
-# Models are loaded once instead of once per request.
 ml_service = CognifiMLService()
-
-
-if __name__ == "__main__":
-    service = CognifiMLService()
-
-    print("=" * 70)
-    print("COGNIFI ML SERVICE")
-    print("=" * 70)
-
-    metadata = service.metadata()
-
-    print("\nBinary:")
-    print(
-        "  Features :",
-        metadata["binary"]["feature_count"]
-    )
-    print(
-        "  Threshold:",
-        metadata["binary"]["threshold"]
-    )
-
-    print("\nMulticlass:")
-    print(
-        "  Features :",
-        metadata["multiclass"]["feature_count"]
-    )
-    print(
-        "  Classes  :",
-        metadata["multiclass"]["class_count"]
-    )
-
-    for index, name in enumerate(
-        metadata["multiclass"]["classes"]
-    ):
-        print(f"  {index:2d} -> {name}")
-
-    print("\n" + "=" * 70)
-    print("ML SERVICE: READY")
-    print("=" * 70)

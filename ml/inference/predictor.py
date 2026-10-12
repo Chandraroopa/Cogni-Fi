@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 
 
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "cognifi_multiclass_30_candidate.joblib"
-SCHEMA_PATH = BASE_DIR / "feature_schema.json"
+ML_DIR = Path(__file__).resolve().parents[1]
 
+MODEL_PATH = ML_DIR / "models" / "cognifi_multiclass_30_candidate.joblib"
+SCHEMA_PATH = ML_DIR / "schemas" / "feature_schema.json"
 NORMAL_CLASS = "Normal"
 
 
