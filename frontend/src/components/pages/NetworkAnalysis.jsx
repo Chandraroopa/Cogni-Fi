@@ -1,3 +1,4 @@
+import api from '../../services/api';
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -37,7 +38,14 @@ function NetworkAnalysis() {
     channel: 1 
   };
 
+  console.log('Selected network:', network);
+console.log('SSID:', network?.name || network?.ssid);
+console.log('Signal:', network?.signal);
+console.log('Channel:', network?.channel);
+console.log('Encryption:', network?.encryption || network?.security);
+
   const [loading, setLoading] = useState(true);
+const [apiError, setApiError] = useState('');
   const [details, setDetails] = useState({ 
     devices: [], 
     connections: [],
@@ -47,18 +55,40 @@ function NetworkAnalysis() {
     packet_rate: 0.0
   });
 
-  useEffect(() => {
-    fetch('http://localhost:5000/api/network-details')
-      .then((res) => res.json())
-      .then((data) => {
-        setDetails(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch detailed metrics:", err);
-        setLoading(false);
+  
+
+useEffect(() => {
+  setLoading(true);
+  setApiError('');
+
+  api.get('/network-details')
+    .then((response) => {
+      const data = response.data;
+
+      if (!data || data.success !== true) {
+        throw new Error('Network details API returned unsuccessful data');
+      }
+
+      setDetails({
+        ...data,
+        devices: Array.isArray(data.devices) ? data.devices : [],
+        connections: Array.isArray(data.connections)
+          ? data.connections
+          : [],
       });
-  }, []);
+    })
+    .catch((err) => {
+      console.error('Failed to fetch detailed metrics:', err);
+      setApiError(
+        'Unable to load network details. Please check the backend and try again.'
+      );
+    })
+    .finally(() => {
+      setLoading(false);
+    });
+}, []);
+
+
 
   const signalValue = network.signal || 0;
   const signalData = {
@@ -115,7 +145,7 @@ function NetworkAnalysis() {
     labels: ['Listening Ports', 'Established Sockets'],
     datasets: [
       {
-        data: [listenCount > 0 ? listenCount : 1, establishedCount > 0 ? establishedCount : 1],
+        data: [listenCount, establishedCount],
         backgroundColor: ['#c084fc', '#06b6d4'],
         borderWidth: 0,
         hoverOffset: 6,
@@ -167,6 +197,33 @@ function NetworkAnalysis() {
           </div>
         </div>
 
+        
+        {/* Network Security Status Banner */}
+        <div className="mb-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-300">
+              <span className="text-2xl font-bold">!</span>
+            </div>
+
+            <div>
+              <h2 className="text-lg font-bold text-amber-300">
+                Security Assessment Pending
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-300">
+                The security of this network has not yet been verified by
+                the threat detection model. Avoid sensitive activities until
+                an assessment is available.
+              </p>
+            </div>
+          </div>
+        </div>
+
+
+        {apiError && (
+  <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+    {apiError}
+  </div>
+)}
         {/* Behavioral Metrics Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
           
@@ -180,35 +237,45 @@ function NetworkAnalysis() {
           {/* 2. DNS Latency */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-blue-500/40 transition duration-300 shadow-xl">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">DNS Latency</p>
-            <p className="text-3xl font-black text-blue-400 mt-2 tracking-tight">{details.dns_latency} ms</p>
+            <p className="text-3xl font-black text-blue-400 mt-2 tracking-tight">{details.dns_latency == null || apiError
+  ? '—'
+  : `${details.dns_latency} ms`}</p>
             <p className="text-xs text-slate-400 mt-2">Average name-resolution delay</p>
           </div>
 
           {/* 3. Gateway RTT */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-purple-500/40 transition duration-300 shadow-xl">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Gateway RTT</p>
-            <p className="text-3xl font-black text-purple-400 mt-2 tracking-tight">{details.gateway_rtt} ms</p>
+            <p className="text-3xl font-black text-purple-400 mt-2 tracking-tight">{details.gateway_rtt == null || apiError
+  ? '—'
+  : `${details.gateway_rtt} ms`}</p>
             <p className="text-xs text-slate-400 mt-2">Median router round-trip time</p>
           </div>
 
           {/* 4. Beacon Interval */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-emerald-500/40 transition duration-300 shadow-xl">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Beacon Interval</p>
-            <p className="text-3xl font-black text-emerald-400 mt-2 tracking-tight">{details.beacon_interval} s</p>
+            <p className="text-3xl font-black text-emerald-400 mt-2 tracking-tight">{details.beacon_interval == null || apiError
+  ? '—'
+  : `${details.beacon_interval} s`}</p>
             <p className="text-xs text-slate-400 mt-2">Frame arrival timing interval</p>
           </div>
 
           {/* 5. Packet Rate */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-amber-500/40 transition duration-300 shadow-xl">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Packet Rate</p>
-            <p className="text-3xl font-black text-amber-400 mt-2 tracking-tight">{details.packet_rate} pkts/s</p>
-            <p className="text-xs text-slate-400 mt-2">Total Packets: {details.total_packets}</p>
+            <p className="text-3xl font-black text-amber-400 mt-2 tracking-tight">{details.packet_rate == null || apiError
+  ? '—'
+  : `${details.packet_rate} pkts/s`}</p>
+            <p className="text-xs text-slate-400 mt-2">Total Packets: {apiError || details.total_packets == null
+  ? '—'
+  : details.total_packets}</p>
           </div>
 
           {/* 6. Active Sockets */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-indigo-500/40 transition duration-300 shadow-xl">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Active Sockets</p>
-            <p className="text-3xl font-black text-indigo-400 mt-2 tracking-tight">{details.connections.length} Ports</p>
+            <p className="text-3xl font-black text-indigo-400 mt-2 tracking-tight">{apiError ? '—' : `${details.connections.length} Ports`}</p>
             <p className="text-xs text-slate-400 mt-2">Real-time TCP/UDP Listeners</p>
           </div>
 

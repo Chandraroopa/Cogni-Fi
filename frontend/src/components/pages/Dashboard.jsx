@@ -1,3 +1,4 @@
+import api from '../../services/api';
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -23,8 +24,8 @@ function Dashboard() {
     setAnalysisResult(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/scan');
-      const data = await response.json();
+      const response = await api.get('/scan');
+const data = response.data;
       
       setNetworks(
   (data.networks || []).map((network) => ({
@@ -61,28 +62,21 @@ function Dashboard() {
   setAnalysisResult(null);
 };
 
-  const handleAnalyze = () => {
-    if (!selectedNetwork) return;
-    
-    // Set local analysis result state
-    const result = {
-      status: selectedNetwork.security === 'Open' ? 'High Risk' : 'Secure',
-      threats: selectedNetwork.security === 'Open' ? 2 : 0,
-      recommendation: selectedNetwork.security === 'Open' 
-        ? 'Avoid sensitive transactions or use a VPN.' 
-        : 'Network encryption looks robust.'
-    };
+  
+const handleAnalyze = () => {
+  if (!selectedNetwork) return;
 
-    setAnalysisResult(result);
+  // No verified ML analysis endpoint is available yet.
+  // Pass only the selected network to the analysis page.
+  setAnalysisResult(null);
 
-    // Navigate to the detailed network analysis page and pass data via state
-    navigate('/network-analysis', { 
-      state: { 
-        network: selectedNetwork, 
-        analysis: result 
-      } 
-    });
-  };
+  navigate('/network-analysis', {
+    state: {
+      network: selectedNetwork,
+    },
+  });
+};
+
 
   const getSignalLabel = (signal) => {
     if (signal >= 80) return 'Excellent';
@@ -453,25 +447,7 @@ function Dashboard() {
                 )}
               </div>
 
-              {analysisResult && (
-                <div className="rounded-2xl border border-cyan-400/20 bg-slate-950/60 p-6 shadow-xl shadow-black/20 backdrop-blur-xl animate-fadeIn">
-                  <h3 className="mb-4 text-lg font-semibold text-cyan-400">Analysis Results</h3>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between border-b border-slate-800 pb-2">
-                      <span className="text-slate-400">Status:</span>
-                      <span className={analysisResult.status === 'High Risk' ? 'text-pink-400 font-semibold' : 'text-cyan-400 font-semibold'}>{analysisResult.status}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-800 pb-2">
-                      <span className="text-slate-400">Threats Detected:</span>
-                      <span className="text-white font-semibold">{analysisResult.threats}</span>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 mb-1">Recommendation:</p>
-                      <p className="text-slate-300 text-xs leading-relaxed bg-slate-900/50 p-3 rounded-lg border border-slate-800">{analysisResult.recommendation}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              
             </div>
           </section>
         </div>
