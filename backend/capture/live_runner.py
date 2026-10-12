@@ -1,10 +1,16 @@
-
 import argparse
 
 from backend.capture.adapter import TSharkCapture
 from backend.capture.feature_window import (
     CausalWindowManager,
     FeatureExtractor,
+)
+
+
+DNS_FEATURES = (
+    "dns_request_count",
+    "dns_response_count",
+    "dns_latency_mean",
 )
 
 
@@ -41,6 +47,12 @@ def run_live_capture(interface: str = "5"):
 
             for name, value in features.items():
                 print(f"  {name}: {value}")
+
+            # Diagnostic summary: displays existing feature values.
+            print("  DNS SUMMARY:")
+            for name in DNS_FEATURES:
+                value = features.get(name, "MISSING")
+                print(f"    {name}: {value}")
 
     try:
         for packet in capture.packets():

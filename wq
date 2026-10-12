@@ -1,0 +1,841 @@
+[33mcommit 77561397ad58eefc174a7bec25de7382eda39326[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m
+Author: Bhoomika8431 <bhoomikulal735@gmail.com>
+Date:   Mon Oct 12 02:37:14 2026 +0530
+
+    Update capture pipeline and feature tests
+
+[1mdiff --git a/backend/capture/feature_window.py b/backend/capture/feature_window.py[m
+[1mindex d99b640..6af23c1 100644[m
+[1m--- a/backend/capture/feature_window.py[m
+[1m+++ b/backend/capture/feature_window.py[m
+[36m@@ -1,641 +1,579 @@[m
+ [m
+ import math[m
+ import statistics[m
+[32m+[m[32mfrom collections import defaultdict, deque[m
+ from typing import List, Dict, Any, Optional[m
+ [m
+ [m
+[32m+[m[32m# Stable order of the 30 operational features.[m
+ FEATURE_NAMES = [[m
+     "packet_count",[m
+     "byte_count",[m
+     "packets_per_second",[m
+     "bytes_per_second",[m
+     "packet_size_mean",[m
+     "packet_size_std",[m
+     "iat_mean",[m
+     "iat_std",[m
+     "retry_rate",[m
+     "protected_rate",[m
+     "beacon_rate",[m
+     "deauth_rate",[m
+     "disassoc_rate",[m
+     "probe_response_rate",[m
+     "signal_mean",[m
+     "signal_std",[m
+     "data_rate_mean",[m
+     "data_rate_std",[m
+     "unique_bssid_count",[m
+     "unique_source_count",[m
+     "unique_destination_count",[m
+     "dns_request_count",[m
+     "dns_response_count",[m
+     "dns_latency_mean",[m
+     "dns_latency_std",[m
+     "syn_rate",[m
+     "rst_rate",[m
+     "retransmission_rate",[m
+     "udp_packet_rate",[m
+     "unique_udp_destination_ports",[m
+ ][m
+ [m
+[31m-[m
+[32m+[m[32m# Diagnostic metadata; not part of the 30-feature vector.[m
+ WIFI_AVAILABILITY_NAMES = [[m
+     "wifi_retry_available",[m
+     "wifi_protected_available",[m
+     "wifi_management_frames_available",[m
+     "wifi_signal_available",[m
+     "wifi_data_rate_available",[m
+     "wifi_bssid_available",[m
+ ][m
+ [m
+ [m
+ def _number(value):[m
+[31m-    """Return a finite float, or None if the value is unavailable/invalid."""[m
+[32m+[m[32m    """Return a finite float, or None if unavailable or invalid."""[m
+     if value is None or value == "":[m
+         return None[m
+ [m
+     try:[m
+         result = float(value)[m
+     except (TypeError, ValueError, OverflowError):[m
+         return None[m
+ [m
+     return result if math.isfinite(result) else None[m
+ [m
+ [m
+ def _first_available(packet, *keys):[m
+[31m-    """Return the first non-None, non-empty value among candidate keys."""[m
+[32m+[m[32m    """Return the first non-empty value."""[m
+     for key in keys:[m
+         value = packet.get(key)[m
+         if value is not None and value != "":[m
+             return value[m
+     return None[m
+ [m
+ [m
+ def _flag(value):[m
+[31m-    """Interpret common Boolean/numeric protocol flag representations."""[m
+[32m+[m[32m    """Interpret common Boolean and numeric flag representations."""[m
+     if isinstance(value, bool):[m
+         return value[m
+ [m
+     if isinstance(value, (int, float)):[m
+[31m-        return math.isfinite(float(value)) and value != 0[m
+[32m+[m[32m        number = _number(value)[m
+[32m+[m[32m        return number is not None and number != 0[m
+ [m
+     if isinstance(value, str):[m
+         return value.strip().lower() in {[m
+             "1", "1.0", "true", "yes", "set"[m
+         }[m
+ [m
+     return False[m
+ [m
+ [m
+ def _mean(values):[m
+[31m-    return statistics.mean(values) if values else 0.0[m
+[32m+[m[32m    return float(statistics.mean(values)) if values else 0.0[m
+ [m
+ [m
+ def _std(values):[m
+[31m-    return statistics.stdev(values) if len(values) > 1 else 0.0[m
+[32m+[m[32m    """Sample standard deviation; zero with fewer than two values."""[m
+[32m+[m[32m    return float(statistics.stdev(values)) if len(values) > 1 else 0.0[m
+ [m
+ [m
+ def _flag_value(packet, primary_key, alternate_key=None):[m
+[31m-    """Read a flag from normalized or alternate field names."""[m
+     value = packet.get(primary_key)[m
+ [m
+     if value is None and alternate_key:[m
+         value = packet.get(alternate_key)[m
+ [m
+     return _flag(value)[m
+ [m
+ [m
+[31m-def feature_dict_to_vector([m
+[31m-    features: Dict[str, Any],[m
+[31m-) -> List[float]:[m
+[31m-    """[m
+[31m-    Convert the 30 operational features into their fixed order.[m
+[32m+[m[32mdef _dns_match_key(packet, transaction_id, is_response):[m
+[32m+[m[32m    """Build a DNS transaction key using endpoints when available."""[m
+[32m+[m[32m    source = packet.get("source")[m
+[32m+[m[32m    destination = packet.get("destination")[m
+ [m
+[31m-    This is not a conversion to either frozen 81/82-feature ML schema.[m
+[31m-    """[m
+[31m-    vector = [][m
+[32m+[m[32m    if source in (None, "") or destination in (None, ""):[m
+[32m+[m[32m        return (str(transaction_id),)[m
+[32m+[m
+[32m+[m[32m    if is_response:[m
+[32m+[m[32m        requester = str(destination)[m
+[32m+[m[32m        resolver = str(source)[m
+[32m+[m[32m    else:[m
+[32m+[m[32m        requester = str(source)[m
+[32m+[m[32m        resolver = str(destination)[m
+[32m+[m
+[32m+[m[32m    return (str(transaction_id), requester, resolver)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _dns_latencies(dns_packets):[m
+[32m+[m[32m    """Match responses to earlier unmatched DNS requests."""[m
+[32m+[m[32m    timestamped_packets = [][m
+[32m+[m
+[32m+[m[32m    for packet in dns_packets:[m
+[32m+[m[32m        transaction_id = packet.get("dns_transaction_id")[m
+[32m+[m[32m        timestamp = _number(packet.get("timestamp"))[m
+[32m+[m
+[32m+[m[32m        if transaction_id is None or timestamp is None:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        is_response = _flag(packet.get("dns_response"))[m
+[32m+[m
+[32m+[m[32m        timestamped_packets.append([m
+[32m+[m[32m            (timestamp, str(transaction_id), is_response, packet)[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    timestamped_packets.sort(key=lambda item: item[0])[m
+[32m+[m[32m    pending_requests = defaultdict(deque)[m
+[32m+[m[32m    latencies = [][m
+[32m+[m
+[32m+[m[32m    for timestamp, transaction_id, is_response, packet in timestamped_packets:[m
+[32m+[m[32m        key = _dns_match_key(packet, transaction_id, is_response)[m
+[32m+[m
+[32m+[m[32m        if not is_response:[m
+[32m+[m[32m            pending_requests[key].append(timestamp)[m
+[32m+[m[32m            continue[m
+ [m
+[31m-    for name in FEATURE_NAMES:[m
+[31m-        value = _number(features.get(name))[m
+[32m+[m[32m        requests = pending_requests[key][m
+ [m
+[31m-        # Preserve the historical vector helper's zero default.[m
+[31m-        vector.append(value if value is not None else 0.0)[m
+[32m+[m[32m        while requests and requests[0] > timestamp:[m
+[32m+[m[32m            requests.popleft()[m
+ [m
+[31m-    return vector[m
+[32m+[m[32m        if not requests:[m
+[32m+[m[32m            continue[m
+[32m+[m
+[32m+[m[32m        request_timestamp = requests.popleft()[m
+[32m+[m[32m        latency = timestamp - request_timestamp[m
+[32m+[m
+[32m+[m[32m        if math.isfinite(latency) and latency >= 0:[m
+[32m+[m[32m            latencies.append(latency)[m
+[32m+[m
+[32m+[m[32m    return latencies[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef feature_dict_to_vector(features: Dict[str, Any]) -> List[float]:[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Convert operational features into the stable 30-feature order.[m
+[32m+[m
+[32m+[m[32m    Missing or invalid values are represented as 0.0 in this vector.[m
+[32m+[m[32m    Consult availability flags before interpreting Wi-Fi measurements.[m
+[32m+[m[32m    This function does not convert to the frozen 81/82-feature schemas.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    return [[m
+[32m+[m[32m        value if (value := _number(features.get(name))) is not None else 0.0[m
+[32m+[m[32m        for name in FEATURE_NAMES[m
+[32m+[m[32m    ][m
+ [m
+ [m
+ class FeatureExtractor:[m
+     """[m
+[31m-    Extract 30 operational features plus six Wi-Fi availability flags.[m
+[32m+[m[32m    Extract 30 operational features and six availability flags.[m
+ [m
+[31m-    Availability flags are diagnostic metadata. They are not part of[m
+[31m-    FEATURE_NAMES and are not included in the 30-feature vector.[m
+[32m+[m[32m    Duration:[m
+[32m+[m[32m      A positive supplied duration is used for rate denominators.[m
+[32m+[m[32m      Otherwise use the observed timestamp span, falling back to[m
+[32m+[m[32m      window_size when that span is invalid or zero.[m
+ [m
+[31m-    Important:[m
+[31m-    - A numeric zero is a valid measurement when explicitly present.[m
+[31m-    - Missing lengths are excluded from packet-size statistics.[m
+[31m-    - Missing Wi-Fi measurements are not considered available.[m
+[31m-    - This class does not produce the frozen 81/82-feature ML schemas.[m
+[32m+[m[32m    Rates:[m
+[32m+[m[32m      packets_per_second, bytes_per_second, management-frame rates,[m
+[32m+[m[32m      syn_rate, rst_rate and udp_packet_rate use duration.[m
+[32m+[m[32m      retry_rate, protected_rate and retransmission_rate use packet_count.[m
+[32m+[m
+[32m+[m[32m    retransmission_rate counts marked retransmission packets divided[m
+[32m+[m[32m    by all packets, not only TCP packets.[m
+[32m+[m
+[32m+[m[32m    Missing Wi-Fi measurements produce numeric zero summaries, with[m
+[32m+[m[32m    availability flags indicating whether measurements were observed.[m
+     """[m
+ [m
+     def __init__(self, window_size: float = 1.0):[m
+         value = _number(window_size)[m
+         self.window_size = ([m
+             value if value is not None and value > 0 else 1.0[m
+         )[m
+ [m
+     def extract_window_features([m
+         self,[m
+         window_packets: List[Dict[str, Any]],[m
+         duration: Optional[float] = None,[m
+     ) -> Dict[str, Any]:[m
+ [m
+         packet_count = len(window_packets)[m
+ [m
+         if packet_count == 0:[m
+             result = {name: 0.0 for name in FEATURE_NAMES}[m
+             result.update({[m
+                 name: False for name in WIFI_AVAILABILITY_NAMES[m
+             })[m
+             return result[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # WI-FI FIELD AVAILABILITY[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+         wifi_availability = {[m
+             "wifi_retry_available": any([m
+[31m-                p.get("retry") is not None[m
+[31m-                for p in window_packets[m
+[32m+[m[32m                p.get("retry") is not None for p in window_packets[m
+             ),[m
+             "wifi_protected_available": any([m
+[31m-                p.get("protected") is not None[m
+[31m-                for p in window_packets[m
+[32m+[m[32m                p.get("protected") is not None for p in window_packets[m
+             ),[m
+             "wifi_management_frames_available": any([m
+                 p.get("frame_type") is not None[m
+                 and p.get("frame_subtype") is not None[m
+                 for p in window_packets[m
+             ),[m
+             "wifi_signal_available": any([m
+[31m-                _first_available([m
+[32m+[m[32m                _number(_first_available([m
+                     p, "signal", "radiotap.dbm_antsignal"[m
+[31m-                ) is not None[m
+[32m+[m[32m                )) is not None[m
+                 for p in window_packets[m
+             ),[m
+             "wifi_data_rate_available": any([m
+[31m-                _first_available([m
+[32m+[m[32m                _number(_first_available([m
+                     p, "data_rate", "radiotap.datarate"[m
+[31m-                ) is not None[m
+[32m+[m[32m                )) is not None[m
+                 for p in window_packets[m
+             ),[m
+             "wifi_bssid_available": any([m
+[31m-                p.get("bssid") is not None[m
+[32m+[m[32m                p.get("bssid") not in (None, "")[m
+                 for p in window_packets[m
+             ),[m
+         }[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # DURATION[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # Duration used for rate features.[m
+         parsed_duration = _number(duration)[m
+ [m
+         if parsed_duration is not None and parsed_duration > 0:[m
+             dur = parsed_duration[m
+         else:[m
+[31m-            timestamps_for_duration = [[m
+[31m-                _number(p.get("timestamp"))[m
+[31m-                for p in window_packets[m
+[31m-            ][m
+[31m-[m
+             valid_timestamps = [[m
+[31m-                timestamp[m
+[31m-                for timestamp in timestamps_for_duration[m
+[31m-                if timestamp is not None and timestamp > 0[m
+[32m+[m[32m                value[m
+[32m+[m[32m                for p in window_packets[m
+[32m+[m[32m                if (value := _number(p.get("timestamp"))) is not None[m
+[32m+[m[32m                and value > 0[m
+             ][m
+ [m
+[31m-            if len(valid_timestamps) >= 2:[m
+[31m-                dur = max(valid_timestamps) - min(valid_timestamps)[m
+[31m-            else:[m
+[31m-                dur = self.window_size[m
+[32m+[m[32m            dur = ([m
+[32m+[m[32m                max(valid_timestamps) - min(valid_timestamps)[m
+[32m+[m[32m                if len(valid_timestamps) >= 2[m
+[32m+[m[32m                else self.window_size[m
+[32m+[m[32m            )[m
+ [m
+             if not math.isfinite(dur) or dur <= 0:[m
+                 dur = self.window_size[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # TRAFFIC AND PACKET LENGTHS[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[31m-        lengths = [][m
+[31m-[m
+[31m-        for packet in window_packets:[m
+[31m-            raw_length = _first_available([m
+[31m-                packet, "length", "frame.len"[m
+[31m-            )[m
+[31m-            length = _number(raw_length)[m
+[31m-[m
+[31m-            if length is not None and length >= 0:[m
+[31m-                lengths.append(length)[m
+[32m+[m[32m        # Packet lengths and byte totals.[m
+[32m+[m[32m        lengths = [[m
+[32m+[m[32m            value[m
+[32m+[m[32m            for p in window_packets[m
+[32m+[m[32m            if (value := _number(_first_available([m
+[32m+[m[32m                p, "length", "frame.len"[m
+[32m+[m[32m            ))) is not None[m
+[32m+[m[32m            and value >= 0[m
+[32m+[m[32m        ][m
+ [m
+         byte_count = sum(lengths)[m
+         packets_per_second = packet_count / dur[m
+         bytes_per_second = byte_count / dur[m
+[31m-[m
+         packet_size_mean = _mean(lengths)[m
+         packet_size_std = _std(lengths)[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # INTER-ARRIVAL TIME[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[31m-        timestamps = [][m
+[31m-[m
+[31m-        for packet in window_packets:[m
+[31m-            timestamp = _number(packet.get("timestamp"))[m
+[31m-[m
+[31m-            if timestamp is not None and timestamp > 0:[m
+[31m-                timestamps.append(timestamp)[m
+[31m-[m
+[31m-        timestamps.sort()[m
+[32m+[m[32m        # Inter-arrival times in seconds.[m
+[32m+[m[32m        timestamps = sorted([m
+[32m+[m[32m            value[m
+[32m+[m[32m            for p in window_packets[m
+[32m+[m[32m            if (value := _number(p.get("timestamp"))) is not None[m
+[32m+[m[32m            and value > 0[m
+[32m+[m[32m        )[m
+ [m
+         iats = [[m
+             timestamps[i] - timestamps[i - 1][m
+             for i in range(1, len(timestamps))[m
+         ][m
+[31m-[m
+         iats = [[m
+             value for value in iats[m
+             if math.isfinite(value) and value >= 0[m
+         ][m
+ [m
+         iat_mean = _mean(iats)[m
+         iat_std = _std(iats)[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # WI-FI RETRY AND PROTECTION[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[31m-        retries = sum([m
+[31m-            _flag(p.get("retry"))[m
+[31m-            for p in window_packets[m
+[31m-        )[m
+[31m-[m
+[32m+[m[32m        # Wi-Fi retry and protection ratios.[m
+[32m+[m[32m        retries = sum(_flag(p.get("retry")) for p in window_packets)[m
+         protected_count = sum([m
+[31m-            _flag(p.get("protected"))[m
+[31m-            for p in window_packets[m
+[32m+[m[32m            _flag(p.get("protected")) for p in window_packets[m
+         )[m
+ [m
+         retry_rate = retries / packet_count[m
+         protected_rate = protected_count / packet_count[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # WI-FI MANAGEMENT FRAME RATES[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # Wi-Fi management frame event rates.[m
+         def is_management_subtype(packet, subtype):[m
+[31m-            frame_type = _number(packet.get("frame_type"))[m
+[31m-            frame_subtype = _number(packet.get("frame_subtype"))[m
+[31m-[m
+             return ([m
+[31m-                frame_type == 0[m
+[31m-                and frame_subtype == subtype[m
+[32m+[m[32m                _number(packet.get("frame_type")) == 0[m
+[32m+[m[32m                and _number(packet.get("frame_subtype")) == subtype[m
+             )[m
+ [m
+         beacon_count = sum([m
+[31m-            is_management_subtype(p, 8)[m
+[31m-            for p in window_packets[m
+[32m+[m[32m            is_management_subtype(p, 8) for p in window_packets[m
+         )[m
+[31m-[m
+         probe_resp_count = sum([m
+[31m-            is_management_subtype(p, 5)[m
+[31m-            for p in window_packets[m
+[32m+[m[32m            is_management_subtype(p, 5) for p in window_packets[m
+         )[m
+[31m-[m
+         deauth_count = sum([m
+[31m-            is_management_subtype(p, 12)[m
+[31m-            for p in window_packets[m
+[32m+[m[32m            is_management_subtype(p, 12) for p in window_packets[m
+         )[m
+[31m-[m
+         disassoc_count = sum([m
+[31m-            is_management_subtype(p, 10)[m
+[31m-            for p in window_packets[m
+[32m+[m[32m            is_management_subtype(p, 10) for p in window_packets[m
+         )[m
+ [m
+         beacon_rate = beacon_count / dur[m
+         probe_response_rate = probe_resp_count / dur[m
+         deauth_rate = deauth_count / dur[m
+         disassoc_rate = disassoc_count / dur[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # RADIO SIGNAL AND DATA RATE[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[31m-        signals = [][m
+[31m-[m
+[31m-        for packet in window_packets:[m
+[31m-            value = _number(_first_available([m
+[31m-                packet, "signal", "radiotap.dbm_antsignal"[m
+[31m-            ))[m
+[32m+[m[32m        # Signal and data-rate summaries; units follow capture adapter.[m
+[32m+[m[32m        signals = [[m
+[32m+[m[32m            value[m
+[32m+[m[32m            for p in window_packets[m
+[32m+[m[32m            if (value := _number(_first_available([m
+[32m+[m[32m                p, "signal", "radiotap.dbm_antsignal"[m
+[32m+[m[32m            ))) is not None[m
+[32m+[m[32m        ][m
+ [m
+[31m-            if value is not None:[m
+[31m-                signals.append(value)[m
+[32m+[m[32m        data_rates = [[m
+[32m+[m[32m            value[m
+[32m+[m[32m            for p in window_packets[m
+[32m+[m[32m            if (value := _number(_first_available([m
+[32m+[m[32m                p, "data_rate", "radiotap.datarate"[m
+[32m+[m[32m            ))) is not None[m
+[32m+[m[32m        ][m
+ [m
+         signal_mean = _mean(signals)[m
+         signal_std = _std(signals)[m
+[31m-[m
+[31m-        data_rates = [][m
+[31m-[m
+[31m-        for packet in window_packets:[m
+[31m-            value = _number(_first_available([m
+[31m-                packet, "data_rate", "radiotap.datarate"[m
+[31m-            ))[m
+[31m-[m
+[31m-            if value is not None:[m
+[31m-                data_rates.append(value)[m
+[31m-[m
+         data_rate_mean = _mean(data_rates)[m
+         data_rate_std = _std(data_rates)[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # ADDRESS CARDINALITY[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # Unique addresses.[m
+         bssids = {[m
+             str(p["bssid"])[m
+             for p in window_packets[m
+             if p.get("bssid") not in (None, "")[m
+         }[m
+[31m-[m
+         sources = {[m
+             str(p["source"])[m
+             for p in window_packets[m
+             if p.get("source") not in (None, "")[m
+         }[m
+[31m-[m
+         destinations = {[m
+             str(p["destination"])[m
+             for p in window_packets[m
+             if p.get("destination") not in (None, "")[m
+         }[m
+ [m
+         unique_bssid_count = float(len(bssids))[m
+         unique_source_count = float(len(sources))[m
+         unique_destination_count = float(len(destinations))[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # DNS COUNTS AND LATENCY[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # DNS request/response counts and matched latency in seconds.[m
+         dns_packets = [[m
+[31m-            p for p in window_packets[m
+[31m-            if _flag(p.get("dns"))[m
+[32m+[m[32m            p for p in window_packets if _flag(p.get("dns"))[m
+         ][m
+[31m-[m
+         dns_request_packets = [[m
+[31m-            p for p in dns_packets[m
+[31m-            if not _flag(p.get("dns_response"))[m
+[32m+[m[32m            p for p in dns_packets if not _flag(p.get("dns_response"))[m
+         ][m
+[31m-[m
+         dns_response_packets = [[m
+[31m-            p for p in dns_packets[m
+[31m-            if _flag(p.get("dns_response"))[m
+[32m+[m[32m            p for p in dns_packets if _flag(p.get("dns_response"))[m
+         ][m
+ [m
+         dns_request_count = float(len(dns_request_packets))[m
+         dns_response_count = float(len(dns_response_packets))[m
+ [m
+[31m-        request_map = {}[m
+[31m-        latencies = [][m
+[31m-[m
+[31m-        for packet in dns_request_packets:[m
+[31m-            transaction_id = packet.get("dns_transaction_id")[m
+[31m-            timestamp = _number(packet.get("timestamp"))[m
+[31m-[m
+[31m-            if transaction_id is None or timestamp is None:[m
+[31m-                continue[m
+[31m-[m
+[31m-            request_map[str(transaction_id)] = timestamp[m
+[31m-[m
+[31m-        for packet in dns_response_packets:[m
+[31m-            transaction_id = packet.get("dns_transaction_id")[m
+[31m-            timestamp = _number(packet.get("timestamp"))[m
+[31m-[m
+[31m-            if transaction_id is None or timestamp is None:[m
+[31m-                continue[m
+[31m-[m
+[31m-            request_timestamp = request_map.get(str(transaction_id))[m
+[31m-[m
+[31m-            if request_timestamp is None:[m
+[31m-                continue[m
+[31m-[m
+[31m-            latency = timestamp - request_timestamp[m
+[31m-[m
+[31m-            if math.isfinite(latency) and latency >= 0:[m
+[31m-                latencies.append(latency)[m
+[31m-[m
+[32m+[m[32m        latencies = _dns_latencies(dns_packets)[m
+         dns_latency_mean = _mean(latencies)[m
+         dns_latency_std = _std(latencies)[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # TCP FLAGS AND RETRANSMISSION[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # TCP flags and retransmission rate.[m
+         syn_count = sum([m
+             _flag_value(p, "tcp_syn", "tcp.flags.syn")[m
+             for p in window_packets[m
+         )[m
+[31m-[m
+         rst_count = sum([m
+             _flag_value(p, "tcp_rst", "tcp.flags.reset")[m
+             for p in window_packets[m
+         )[m
+[31m-[m
+         retrans_count = sum([m
+             _flag_value([m
+[31m-                p,[m
+[31m-                "tcp_retransmission",[m
+[31m-                "tcp.analysis.retransmission",[m
+[32m+[m[32m                p, "tcp_retransmission", "tcp.analysis.retransmission"[m
+             )[m
+             for p in window_packets[m
+         )[m
+ [m
+[31m-        # Preserve the existing definition: SYN/RST events per second,[m
+[31m-        # and retransmission-marked packets divided by all window packets.[m
+         syn_rate = syn_count / dur[m
+         rst_rate = rst_count / dur[m
+         retransmission_rate = retrans_count / packet_count[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # UDP[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[31m-        udp_packets = [][m
+[32m+[m[32m        # UDP packets with a valid destination port.[m
+         udp_ports = set()[m
+[32m+[m[32m        udp_count = 0[m
+ [m
+         for packet in window_packets:[m
+[31m-            raw_port = _first_available([m
+[32m+[m[32m            port_number = _number(_first_available([m
+                 packet, "udp_destination_port", "udp.dstport"[m
+[31m-            )[m
+[31m-            port_number = _number(raw_port)[m
+[32m+[m[32m            ))[m
+ [m
+             if ([m
+                 port_number is not None[m
+                 and port_number.is_integer()[m
+                 and 1 <= port_number <= 65535[m
+             ):[m
+[31m-                udp_packets.append(packet)[m
+[32m+[m[32m                udp_count += 1[m
+                 udp_ports.add(int(port_number))[m
+ [m
+[31m-        udp_packet_rate = len(udp_packets) / dur[m
+[32m+[m[32m        udp_packet_rate = udp_count / dur[m
+         unique_udp_destination_ports = float(len(udp_ports))[m
+ [m
+[31m-        # ---------------------------------------------------------[m
+[31m-        # RESULT: preserve the established 30 feature names[m
+[31m-        # ---------------------------------------------------------[m
+[31m-[m
+[32m+[m[32m        # Keep result names and order aligned with FEATURE_NAMES.[m
+         result = {[m
+             "packet_count": float(packet_count),[m
+             "byte_count": float(byte_count),[m
+             "packets_per_second": float(packets_per_second),[m
+             "bytes_per_second": float(bytes_per_second),[m
+             "packet_size_mean": float(packet_size_mean),[m
+             "packet_size_std": float(packet_size_std),[m
+             "iat_mean": float(iat_mean),[m
+             "iat_std": float(iat_std),[m
+             "retry_rate": float(retry_rate),[m
+             "protected_rate": float(protected_rate),[m
+             "beacon_rate": float(beacon_rate),[m
+             "deauth_rate": float(deauth_rate),[m
+             "disassoc_rate": float(disassoc_rate),[m
+             "probe_response_rate": float(probe_response_rate),[m
+             "signal_mean": float(signal_mean),[m
+             "signal_std": float(signal_std),[m
+             "data_rate_mean": float(data_rate_mean),[m
+             "data_rate_std": float(data_rate_std),[m
+             "unique_bssid_count": unique_bssid_count,[m
+             "unique_source_count": unique_source_count,[m
+             "unique_destination_count": unique_destination_count,[m
+             "dns_request_count": dns_request_count,[m
+             "dns_response_count": dns_response_count,[m
+             "dns_latency_mean": float(dns_latency_mean),[m
+             "dns_latency_std": float(dns_latency_std),[m
+             "syn_rate": float(syn_rate),[m
+             "rst_rate": float(rst_rate),[m
+             "retransmission_rate": float(retransmission_rate),[m
+             "udp_packet_rate": float(udp_packet_rate),[m
+[31m-            "unique_udp_destination_ports": ([m
+[31m-                unique_udp_destination_ports[m
+[31m-            ),[m
+[32m+[m[32m            "unique_udp_destination_ports": unique_udp_destination_ports,[m
+         }[m
+ [m
+         result.update(wifi_availability)[m
+         return result[m
+ [m
+ [m
+ class CausalWindowManager:[m
+[31m-    """[m
+[31m-    Create causal time windows from incoming packets.[m
+[31m-[m
+[31m-    A completed window is emitted when a packet from a later window[m
+[31m-    arrives. Empty windows are not fabricated. Input packets must be[m
+[31m-    timestamped and arrive chronologically.[m
+[31m-    """[m
+[32m+[m[32m    """Group chronologically ordered packets into causal time windows."""[m
+ [m
+     def __init__(self, window_size: float = 1.0):[m
+         value = _number(window_size)[m
+         self.window_size = ([m
+             value if value is not None and value > 0 else 1.0[m
+         )[m
+[31m-[m
+         self.start_timestamp: Optional[float] = None[m
+         self.current_window_id: Optional[int] = None[m
+         self.current_packets: List[Dict[str, Any]] = [][m
+ [m
+     def _packet_timestamp(self, packet: Dict[str, Any]) -> float:[m
+         timestamp = _number(packet.get("timestamp"))[m
+ [m
+         if timestamp is None:[m
+[31m-            raise ValueError([m
+[31m-                "Packet has a missing or invalid timestamp."[m
+[31m-            )[m
+[32m+[m[32m            raise ValueError("Packet has a missing or invalid timestamp.")[m
+ [m
+         return timestamp[m
+ [m
+     def add_packet([m
+[31m-        self,[m
+[31m-        packet: Dict[str, Any],[m
+[32m+[m[32m        self, packet: Dict[str, Any][m
+     ) -> List[Dict[str, Any]]:[m
+[31m-        """Add a packet and return any newly completed windows."""[m
+[32m+[m[32m        """Add a packet and return completed windows."""[m
+ [m
+         timestamp = self._packet_timestamp(packet)[m
+ [m
+         if self.start_timestamp is None:[m
+             self.start_timestamp = timestamp[m
+             self.current_window_id = 0[m
+             self.current_packets = [packet][m
+             return [][m
+ [m
+         relative_time = timestamp - self.start_timestamp[m
+ [m
+         if relative_time < 0:[m
+             raise ValueError([m
+                 "Packet timestamp moved backwards before capture start."[m
+             )[m
+ [m
+         window_id = int(relative_time // self.window_size)[m
+ [m
+[31m-        if ([m
+[31m-            self.current_window_id is not None[m
+[31m-            and window_id < self.current_window_id[m
+[31m-        ):[m
+[32m+[m[32m        if window_id < self.current_window_id:[m
+             raise ValueError([m
+                 "Packet timestamp moved backwards across a completed window."[m
+             )[m
+ [m
+         if window_id == self.current_window_id:[m
+             self.current_packets.append(packet)[m
+             return [][m
+ [m
+[31m-        completed = [][m
+[31m-[m
+[31m-        if self.current_window_id is not None:[m
+[31m-            completed.append({[m
+[31m-                "window_id": self.current_window_id,[m
+[31m-                "start_timestamp": ([m
+[31m-                    self.start_timestamp[m
+[31m-                    + self.current_window_id * self.window_size[m
+[31m-                ),[m
+[31m-                "end_timestamp": ([m
+[31m-                    self.start_timestamp[m
+[31m-                    + (self.current_window_id + 1) * self.window_size[m
+[31m-                ),[m
+[31m-                "packets": self.current_packets,[m
+[31m-            })[m
+[32m+[m[32m        completed = [{[m
+[32m+[m[32m            "window_id": self.current_window_id,[m
+[32m+[m[32m            "start_timestamp": ([m
+[32m+[m[32m                self.start_timestamp[m
+[32m+[m[32m                + self.current_window_id * self.window_size[m
+[32m+[m[32m            ),[m
+[32m+[m[32m            "end_timestamp": ([m
+[32m+[m[32m                self.start_timestamp[m
+[32m+[m[32m                + (self.current_window_id + 1) * self.window_size[m
+[32m+[m[32m            ),[m
+[32m+[m[32m            "packets": self.current_packets,[m
+[32m+[m[32m        }][m
+ [m
+         self.current_window_id = window_id[m
+         self.current_packets = [packet][m
+[31m-[m
+         return completed[m
+ [m
+     def flush(self) -> List[Dict[str, Any]]:[m
+[31m-        """Emit the current partial window, if it contains packets."""[m
+[32m+[m[32m        """Emit the final partial window, if one exists."""[m
+ [m
+         if self.current_window_id is None or not self.current_packets:[m
+             return [][m
+ [m
+         completed = [{[m
+             "window_id": self.current_window_id,[m
+             "start_timestamp": ([m
+                 self.start_timestamp[m
+                 + self.current_window_id * self.window_size[m
+             ),[m
+             "end_timestamp": ([m
+                 self.start_timestamp[m
+                 + (self.current_window_id + 1) * self.window_size[m
+             ),[m
+             "packets": self.current_packets,[m
+         }][m
+ [m
+         self.current_packets = [][m
+         return completed[m
+ [m

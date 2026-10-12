@@ -1,0 +1,43 @@
+[1mdiff --git a/backend/capture/live_runner.py b/backend/capture/live_runner.py[m
+[1mindex cde096e..d16f0fe 100644[m
+[1m--- a/backend/capture/live_runner.py[m
+[1m+++ b/backend/capture/live_runner.py[m
+[36m@@ -1,4 +1,3 @@[m
+[31m-[m
+ import argparse[m
+ [m
+ from backend.capture.adapter import TSharkCapture[m
+[36m@@ -8,6 +7,13 @@[m [mfrom backend.capture.feature_window import ([m
+ )[m
+ [m
+ [m
+[32m+[m[32mDNS_FEATURES = ([m
+[32m+[m[32m    "dns_request_count",[m
+[32m+[m[32m    "dns_response_count",[m
+[32m+[m[32m    "dns_latency_mean",[m
+[32m+[m[32m)[m
+[32m+[m
+[32m+[m
+ def run_live_capture(interface: str = "5"):[m
+     capture = TSharkCapture(interface=interface)[m
+     window_manager = CausalWindowManager(window_size=1.0)[m
+[36m@@ -42,6 +48,12 @@[m [mdef run_live_capture(interface: str = "5"):[m
+             for name, value in features.items():[m
+                 print(f"  {name}: {value}")[m
+ [m
+[32m+[m[32m            # Diagnostic summary: displays existing feature values.[m
+[32m+[m[32m            print("  DNS SUMMARY:")[m
+[32m+[m[32m            for name in DNS_FEATURES:[m
+[32m+[m[32m                value = features.get(name, "MISSING")[m
+[32m+[m[32m                print(f"    {name}: {value}")[m
+[32m+[m
+     try:[m
+         for packet in capture.packets():[m
+             packet_count += 1[m
+[36m@@ -84,4 +96,4 @@[m [mdef main():[m
+ [m
+ [m
+ if __name__ == "__main__":[m
+[31m-    main()[m
+[32m+[m[32m    main()[m
+\ No newline at end of file[m
