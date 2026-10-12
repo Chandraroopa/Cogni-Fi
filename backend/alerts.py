@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 class AlertEngine:
     @staticmethod
     def create_alert(status, risk_score, trust_score, attack_type=None,
-                     confidence=None, reasons=None):
+                     confidence=None, reasons=None, assessment=None,):
         if status not in ('Risky', 'Suspicious'):
             return None
         return {
@@ -14,5 +14,7 @@ class AlertEngine:
             'attack_type': attack_type,
             'confidence': confidence,
             'reasons': list(reasons or []),
+            'assessment': assessment,
+            'provisional': assessment != 'full',
             'timestamp': datetime.now(timezone.utc).isoformat(),
         }

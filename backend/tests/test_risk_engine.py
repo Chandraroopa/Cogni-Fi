@@ -9,8 +9,34 @@ BACKEND_DIR = (
 
 sys.path.insert( 0, str(BACKEND_DIR) )
 
+from backend.behavioral_severity import BehavioralSeverityEngine
+
+
+def test_unavailable_wifi_values_are_not_scored():
+    engine = BehavioralSeverityEngine(
+        baseline={
+            "retry_rate": {"p95": 0.1, "p99": 0.2},
+            "deauth_rate": {"p95": 0.0, "p99": 1.0},
+        }
+    )
+
+    result = engine.analyze(
+        {
+            "retry_rate": 0.0,
+            "deauth_rate": 0.0,
+        },
+        availability={
+            "wifi_retry_available": False,
+            "wifi_management_frames_available": False,
+        },
+    )
+
+    assert result["risk"] is None
+    assert result["features"]["retry_rate"] is None
+    assert result["features"]["deauth_rate"] is None
+
 from risk_engine import RiskEngine
-# No behavioral baseline yet.
+
 engine = RiskEngine()
 
 def binary_result(

@@ -167,7 +167,12 @@ class RiskEngine:
                 )
                 # Partial behavioral inputs remain diagnostic; do not call them a full component.
                 group_scores = behavior_result.get('groups', {})
-                if group_scores and all(value is not None for value in group_scores.values()) and not behavior_result.get('missing_features'):
+                if (
+                    group_scores
+                    and all(value is not None for value in group_scores.values())
+                    and not behavior_result.get('missing_features')
+                    and not behavior_result.get('unscored_features')
+                ):
                     behavior_score = self.clamp(behavior_result.get('risk'))
         factors = {'ml': ml_score, 'behavior': behavior_score, 'static': static}
         risk_score, completeness = self.calculate_risk(factors)
@@ -191,7 +196,7 @@ class RiskEngine:
             ml_model_type=ml_evidence['model_type'],
         )
         recommendations = self.explanation_engine.build_recommendations(status=status, assessment=assessment, attack_type=attack_type)
-        alert = self.alert_engine.create_alert(status=status, risk_score=risk_score, trust_score=trust_score, attack_type=attack_type, confidence=attack_confidence, reasons=reasons)
+        alert = self.alert_engine.create_alert(status=status, risk_score=risk_score, trust_score=trust_score, attack_type=attack_type, confidence=attack_confidence, reasons=reasons, assessment=assessment)
         return {
             'mode': mode, 'assessment': assessment, 'risk_score': risk_score,
             'trust_score': trust_score, 'status': status,

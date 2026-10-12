@@ -1,4 +1,9 @@
 import math
+BEHAVIOR_WIFI_FLAGS = {
+    "retry_rate": "wifi_retry_available",
+    "deauth_rate": "wifi_management_frames_available",
+    "disassoc_rate": "wifi_management_frames_available",
+}
 
 try:
     from .risk_config import BEHAVIOR_GROUPS
@@ -100,6 +105,26 @@ class BehavioralSeverityEngine:
 
             for feature_name in group_features:
                 value = features.get(feature_name)
+
+                # Explicit per-feature availability overrides diagnostic flags.
+                # Missing or unknown availability is never treated as True.
+                verified = (
+                    isinstance(availability, dict)
+                    and availability.get(feature_name) is True
+                )
+
+                # Allow the existing Wi-Fi capture flags to establish availability
+                # for the three management indicators.
+                wifi_flag = BEHAVIOR_WIFI_FLAGS.get(feature_name)
+
+                if wifi_flag is not None and isinstance(availability, dict):
+                    if feature_name not in availability:
+                        verified = availability.get(wifi_flag) is True
+
+                if not verified:
+                    feature_severity[feature_name] = None
+                    unscored_features.append(feature_name)
+                    continue
 
                 if value is None:
                     feature_severity[feature_name] = None
