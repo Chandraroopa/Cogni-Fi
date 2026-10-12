@@ -1,0 +1,57 @@
+{
+  "source_csv": "data\\live_windows_20261012_233850.csv",
+  "schema_file": "ml\\candidate_30\\feature_schema.json",
+  "feature_count": 30,
+  "feature_order_matches_schema": true,
+  "window": {
+    "features": {
+      "packet_count": 43.0,
+      "byte_count": 17462.0,
+      "packets_per_second": 43.0,
+      "bytes_per_second": 17462.0,
+      "packet_size_mean": 406.09302325581393,
+      "packet_size_std": 508.2078602657385,
+      "iat_mean": 0.0193361668359665,
+      "iat_std": 0.0459712173057879,
+      "retry_rate": 0.0,
+      "protected_rate": 0.0,
+      "beacon_rate": 0.0,
+      "deauth_rate": 0.0,
+      "disassoc_rate": 0.0,
+      "probe_response_rate": 0.0,
+      "signal_mean": 0.0,
+      "signal_std": 0.0,
+      "data_rate_mean": 0.0,
+      "data_rate_std": 0.0,
+      "unique_bssid_count": 0.0,
+      "unique_source_count": 6.0,
+      "unique_destination_count": 6.0,
+      "dns_request_count": 0.0,
+      "dns_response_count": 0.0,
+      "dns_latency_mean": 0.0,
+      "dns_latency_std": 0.0,
+      "syn_rate": 0.0,
+      "rst_rate": 0.0,
+      "retransmission_rate": 0.0,
+      "udp_packet_rate": 2.0,
+      "unique_udp_destination_ports": 2.0
+    },
+    "availability_flags": {
+      "wifi_retry_available": false,
+      "wifi_protected_available": false,
+      "wifi_management_frames_available": false,
+      "wifi_signal_available": false,
+      "wifi_data_rate_available": false,
+      "wifi_bssid_available": false
+    },
+    "traffic_label": "unlabelled",
+    "security_type": "unknown",
+    "packet_count": 43,
+    "verification_notes": [
+      "Values are copied from the recorded CSV, not newly captured.",
+      "False availability means unavailable in this capture, not zero activity.",
+      "Security type was not verified by the supplied evidence.",
+      "Feature units must be confirmed from the extractor/source metadata."
+    ]
+  }
+}
