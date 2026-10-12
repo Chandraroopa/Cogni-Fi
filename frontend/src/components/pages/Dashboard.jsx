@@ -26,7 +26,13 @@ function Dashboard() {
       const response = await fetch('http://localhost:5000/api/scan');
       const data = await response.json();
       
-      setNetworks(data.networks || []);
+      setNetworks(
+  (data.networks || []).map((network) => ({
+    ...network,
+    signalPercentage:
+      network.signalPercentage ?? network.signal_percentage ?? null,
+  }))
+);
       if (data.currentConnection) {
         setSelectedNetwork(data.currentConnection);
       }
@@ -38,9 +44,22 @@ function Dashboard() {
   };
 
   const handleSelectNetwork = (network) => {
-    setSelectedNetwork(network);
-    setAnalysisResult(null); // Resets previous analysis result when changing selection
-  };
+  const getNetworkKey = (item) =>
+    item.ssid || item.name || item.network_name;
+
+  setSelectedNetwork((current) => {
+    if (
+      current &&
+      getNetworkKey(current) === getNetworkKey(network)
+    ) {
+      return null; // Click again to deselect
+    }
+
+    return network; // Select only this network
+  });
+
+  setAnalysisResult(null);
+};
 
   const handleAnalyze = () => {
     if (!selectedNetwork) return;
@@ -252,7 +271,12 @@ function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-slate-400">Your Trust Score</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{selectedNetwork ? (selectedNetwork.security === 'Open' ? '42' : '95') : '--'}</p>
+
+<p className="mt-1 text-3xl font-bold text-white">
+  {selectedNetwork
+    ? selectedNetwork.trust_score ?? selectedNetwork.trustScore ?? '--'
+    : '--'}
+</p>
                   <p className="mt-1 text-xs text-slate-600">Select a network</p>
                 </div>
               </div>
@@ -308,9 +332,45 @@ function Dashboard() {
               {!scanning && networks.length > 0 && (
                 <div className="mt-4 space-y-2">
                   {networks.map((network) => {
-                    const selected = selectedNetwork?.id === network.id || selectedNetwork?.name === network.name;
-                    return (
-                      <div key={network.id || network.name} className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${selected ? 'border-cyan-400/70 bg-cyan-400/[0.06]' : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'}`}>
+  const signalPercentage = (() => {
+    const percentage = Number(network.signalPercentage);
+
+    // Use the backend percentage when it is valid.
+    if (
+      network.signalPercentage !== null &&
+      network.signalPercentage !== undefined &&
+      network.signalPercentage !== '' &&
+      Number.isFinite(percentage) &&
+      percentage >= 0 &&
+      percentage <= 100
+    ) {
+      return percentage;
+    }
+
+    // Otherwise, convert a negative dBm signal reading.
+    const signalDbm = Number(network.signal);
+
+    if (
+      network.signal !== null &&
+      network.signal !== undefined &&
+      network.signal !== '' &&
+      Number.isFinite(signalDbm) &&
+      signalDbm >= -100 &&
+      signalDbm < 0
+    ) {
+      return Math.round(
+        Math.max(0, Math.min(100, 2 * (signalDbm + 100)))
+      );
+    }
+
+    return null;
+  })();
+
+  const selected =
+  selectedNetwork != null &&
+  (selectedNetwork.ssid || selectedNetwork.name || selectedNetwork.network_name) ===
+    (network.ssid || network.name || network.network_name);                 return (
+                      <div key={network.ssid || network.name || network.network_name} className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${selected ? 'border-cyan-400/70 bg-cyan-400/[0.06]' : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'}`}>
                         <div className="flex items-center gap-3">
                           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-cyan-400/15 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}><Icon type="wifi" size={19} /></div>
                           <div className="min-w-0">
@@ -322,13 +382,19 @@ function Dashboard() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-end gap-[3px]">
                             {[1, 2, 3, 4].map((bar) => {
-                              const active = network.signal >= bar * 25;
-                              return <span key={bar} className={`w-[4px] rounded-sm ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'} ${active ? getSignalBarColor(network.signal) : 'bg-slate-800'}`} />;
+                              const active = network.signalPercentage >= bar * 25;
+                              return <span key={bar} className={`w-[4px] rounded-sm ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'} ${active ? getSignalBarColor(network.signalPercentage) : 'bg-slate-800'}`} />;
                             })}
                           </div>
                           <div>
-                            <p className={`text-sm font-semibold ${getSignalTextColor(network.signal)}`}>{network.signal}%</p>
-                            <p className="text-[10px] text-slate-600">{getSignalLabel(network.signal)}</p>
+                            
+<p className={`text-sm font-semibold ${getSignalTextColor(network.signalPercentage)}`}>
+  {network.signalPercentage}%
+</p>
+<p className="text-[10px] text-slate-600">
+  {getSignalLabel(network.signalPercentage)}
+</p>
+
                           </div>
                         </div>
 
