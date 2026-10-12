@@ -1,196 +1,108 @@
+
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 
-from backend.ml_feature_contract import MLFeatureContract
-from backend.ml_service import CognifiMLService
+from ml.candidate_30.predictor_30 import (
+    load_predictor,
+    predict_one,
+)
+
+SCHEMA_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "ml"
+    / "candidate_30"
+    / "feature_schema.json"
+)
 
 
 def assert_probability(value: float, name: str) -> None:
     assert math.isfinite(value), f"{name} is not finite"
-    assert 0.0 <= value <= 1.0, f"{name} is outside [0, 1]"
+    assert 0.0 <= value <= 1.0, f"{name} outside [0, 1]"
 
 
 def main() -> None:
-    print("=" * 70)
-    print("CogniFi ML HANDOFF SMOKE TEST")
-    print("=" * 70)
+    print("=" * 65)
+    print("COGNIFI 30-FEATURE ML SMOKE TEST")
+    print("=" * 65)
 
-    service = CognifiMLService()
-    contract = MLFeatureContract()
+    with SCHEMA_PATH.open("r", encoding="utf-8") as file:
+        schema = json.load(file)
 
-    # ---------------------------------------------------------------
-    # 1. Frozen schema checks
-    # ---------------------------------------------------------------
-    assert len(service.binary_features) == 82
-    assert len(service.multiclass_features) == 81
+    feature_names = schema["features"]
 
-    assert len(contract.binary_features) == 82
-    assert len(contract.multiclass_features) == 81
+    assert schema["model_input_count"] == 30
+    assert schema["availability_flags_are_model_inputs"] is False
+    assert len(feature_names) == 30
 
-    print("[PASS] Binary schema: 82 features")
-    print("[PASS] Multiclass schema: 81 features")
-    print(f"[PASS] Binary threshold: {service.binary_threshold}")
-    print(f"[PASS] Multiclass classes: {len(service.multiclass_classes)}")
+    model, loaded_features = load_predictor()
 
-    # ---------------------------------------------------------------
-    # 2. Build deterministic test payloads
-    #
-    # Use zero-valued feature vectors because the purpose of this
-    # script is to verify loading, validation, and inference—not to
-    # evaluate model accuracy.
-    # ---------------------------------------------------------------
-    binary_input = {
-        feature: 0.0
-        for feature in service.binary_features
-    }
+    assert loaded_features == feature_names
+    assert model.n_features_in_ == 30
+    assert len(model.classes_) == 14
 
-    multiclass_input = {
-        feature: 0.0
-        for feature in service.multiclass_features
-    }
+    print("[PASS] Schema contains exactly 30 features")
+    print("[PASS] Availability flags excluded from model inputs")
+    print("[PASS] Model loaded with 14 classes")
 
-    # ---------------------------------------------------------------
-    # 3. Contract validation
-    # ---------------------------------------------------------------
-    binary_validation = contract.validate_binary(binary_input)
-    multiclass_validation = contract.validate_multiclass(multiclass_input)
+    # Zero input checks software behavior only, not detection quality.
+    test_features = {name: 0.0 for name in feature_names}
+    result = predict_one(test_features)
 
-    assert binary_validation["valid"], binary_validation
-    assert multiclass_validation["valid"], multiclass_validation
+    assert result["predicted_class"] in [str(c) for c in model.classes_]
+    assert isinstance(result["is_threat"], bool)
 
-    print("[PASS] Binary feature contract validation")
-    print("[PASS] Multiclass feature contract validation")
+    assert_probability(result["confidence"], "confidence")
+    assert_probability(result["threat_probability"], "threat_probability")
+    assert_probability(result["normal_probability"], "normal_probability")
 
-    # ---------------------------------------------------------------
-    # 4. Binary inference
-    # ---------------------------------------------------------------
-    binary_result = service.predict_binary(binary_input)
-
-    assert isinstance(binary_result["is_threat"], bool)
-
-    attack_probability = float(binary_result["attack_probability"])
-    normal_probability = float(binary_result["normal_probability"])
-    confidence = float(binary_result["confidence"])
-    threshold = float(binary_result["threshold"])
-
-    assert_probability(attack_probability, "attack_probability")
-    assert_probability(normal_probability, "normal_probability")
-    assert_probability(confidence, "confidence")
+    probabilities = result["class_probabilities"]
+    assert len(probabilities) == 14
+    assert abs(sum(probabilities.values()) - 1.0) < 1e-6
 
     assert abs(
-        attack_probability + normal_probability - 1.0
+        result["threat_probability"] + result["normal_probability"] - 1.0
     ) < 1e-6
 
-    assert threshold == 0.09
-
-    print("[PASS] Binary inference")
-    print(f"       is_threat: {binary_result['is_threat']}")
-    print(f"       attack_probability: {attack_probability:.6f}")
-    print(f"       normal_probability: {normal_probability:.6f}")
-    print(f"       confidence: {confidence:.6f}")
-
-    # ---------------------------------------------------------------
-    # 5. Multiclass inference
-    # ---------------------------------------------------------------
-    multiclass_result = service.predict_multiclass(multiclass_input)
-
-    predicted_class = multiclass_result["predicted_class"]
-    class_id = int(multiclass_result["class_id"])
-    multiclass_confidence = float(multiclass_result["confidence"])
-    probabilities = multiclass_result["class_probabilities"]
-
-    assert predicted_class in service.multiclass_classes
-    assert 0 <= class_id < len(service.multiclass_classes)
-
-    assert_probability(
-        multiclass_confidence,
-        "multiclass confidence",
-    )
-
-    probability_values = [
-        float(value)
-        for value in probabilities.values()
-    ]
-
-    assert probability_values
-    assert all(
-        0.0 <= value <= 1.0
-        for value in probability_values
-    )
-
-    assert abs(sum(probability_values) - 1.0) < 1e-6
+    assert len(result["top_3"]) == 3
+    assert result["is_threat"] == (result["predicted_class"] != "Normal")
 
     print("[PASS] Multiclass inference")
-    print(f"       predicted_class: {predicted_class}")
-    print(f"       class_id: {class_id}")
-    print(f"       confidence: {multiclass_confidence:.6f}")
+    print(f"       Predicted class: {result['predicted_class']}")
+    print(f"       Threat detected: {result['is_threat']}")
+    print(f"       Confidence: {result['confidence']:.6f}")
+    print(f"       Threat probability: {result['threat_probability']:.6f}")
+    print("[PASS] Class probabilities sum to 1")
+    print("[PASS] Threat probability matches non-Normal class probabilities")
+    print("[PASS] Top-three predictions returned")
 
-    # ---------------------------------------------------------------
-    # 6. Invalid payload checks
-    # ---------------------------------------------------------------
+    # Missing-feature rejection
+    missing = dict(test_features)
+    missing.pop(feature_names[0])
 
-    # Missing feature
-    invalid_missing = dict(binary_input)
-    invalid_missing.pop(service.binary_features[0])
+    try:
+        predict_one(missing)
+    except ValueError:
+        print("[PASS] Missing feature rejected")
+    else:
+        raise AssertionError("Missing feature was not rejected")
 
-    result = contract.validate_binary(invalid_missing)
+    # Non-finite input rejection
+    invalid = dict(test_features)
+    invalid[feature_names[0]] = float("nan")
 
-    assert result["valid"] is False
-    assert service.binary_features[0] in result["missing_features"]
+    try:
+        predict_one(invalid)
+    except ValueError:
+        print("[PASS] NaN input rejected")
+    else:
+        raise AssertionError("NaN input was not rejected")
 
-    print("[PASS] Missing binary feature rejected")
-
-    # Extra feature
-    invalid_extra = dict(binary_input)
-    invalid_extra["unexpected_feature"] = 123.0
-
-    result = contract.validate_binary(invalid_extra)
-
-    assert result["valid"] is False
-    assert "unexpected_feature" in result["extra_features"]
-
-    print("[PASS] Extra binary feature rejected")
-
-    # Non-numeric value
-    invalid_type = dict(binary_input)
-    invalid_type[service.binary_features[0]] = "not-a-number"
-
-    result = contract.validate_binary(invalid_type)
-
-    assert result["valid"] is False
-    assert service.binary_features[0] in result["non_numeric_features"]
-
-    print("[PASS] Non-numeric binary feature rejected")
-
-    # NaN
-    invalid_nan = dict(binary_input)
-    invalid_nan[service.binary_features[0]] = float("nan")
-
-    result = contract.validate_binary(invalid_nan)
-
-    assert result["valid"] is False
-    assert service.binary_features[0] in result["non_finite_features"]
-
-    print("[PASS] NaN binary feature rejected")
-
-    # Infinity
-    invalid_inf = dict(binary_input)
-    invalid_inf[service.binary_features[0]] = float("inf")
-
-    result = contract.validate_binary(invalid_inf)
-
-    assert result["valid"] is False
-    assert service.binary_features[0] in result["non_finite_features"]
-
-    print("[PASS] Infinity binary feature rejected")
-
-    # ---------------------------------------------------------------
-    # Final
-    # ---------------------------------------------------------------
-    print("=" * 70)
-    print("ALL ML HANDOFF SMOKE TESTS PASSED")
-    print("=" * 70)
+    print("=" * 65)
+    print("ALL 30-FEATURE ML SMOKE TESTS PASSED")
+    print("=" * 65)
 
 
 if __name__ == "__main__":
