@@ -1,0 +1,23 @@
+
+{
+  "model_status": "CANDIDATE_NOT_LIVE_VERIFIED",
+  "task": "14-class multiclass classification",
+  "input_feature_count": 30,
+  "class_count": 14,
+  "heldout_windows": 508,
+  "accuracy": 0.9626,
+  "balanced_accuracy": 0.9516,
+  "macro_f1": 0.9450,
+  "weighted_f1": 0.9622,
+  "misclassified_windows": 19,
+  "live_inference_verified": false,
+  "notes": [
+    "These are offline held-out evaluation results.",
+    "Normal is one of the 14 classes.",
+    "No separate binary model is required.",
+    "is_threat is derived from whether the predicted class is Normal.",
+    "threat_probability is the sum of probabilities for all non-Normal classes.",
+    "Availability flags are diagnostic only and are not model inputs.",
+    "Do not mark this candidate as production-ready until live integration is tested."
+  ]
+}

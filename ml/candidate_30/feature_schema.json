@@ -1,0 +1,46 @@
+
+{
+  "model_input_count": 30,
+  "availability_flag_count": 6,
+  "availability_flags_are_model_inputs": false,
+  "feature_contract_status": "VERIFIED",
+  "features": [
+    "packet_count",
+    "byte_count",
+    "packets_per_second",
+    "bytes_per_second",
+    "packet_size_mean",
+    "packet_size_std",
+    "iat_mean",
+    "iat_std",
+    "retry_rate",
+    "protected_rate",
+    "beacon_rate",
+    "deauth_rate",
+    "disassoc_rate",
+    "probe_response_rate",
+    "signal_mean",
+    "signal_std",
+    "data_rate_mean",
+    "data_rate_std",
+    "unique_bssid_count",
+    "unique_source_count",
+    "unique_destination_count",
+    "dns_request_count",
+    "dns_response_count",
+    "dns_latency_mean",
+    "dns_latency_std",
+    "syn_rate",
+    "rst_rate",
+    "retransmission_rate",
+    "udp_packet_rate",
+    "unique_udp_destination_ports"
+  ],
+  "availability_flags": [],
+  "notes": [
+    "The model accepts exactly 30 numerical features in the order listed in the features array.",
+    "The six availability flags are diagnostic metadata only and are not model inputs.",
+    "Do not reorder, rename, omit, or add model input features.",
+    "Live integration still requires validation against actual feature windows."
+  ]
+}

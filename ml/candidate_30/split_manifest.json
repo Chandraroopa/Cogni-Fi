@@ -1,0 +1,40 @@
+
+{
+  "model_status": "CANDIDATE_NOT_LIVE_VERIFIED",
+  "task": "14-class multiclass classification",
+  "input_feature_count": 30,
+  "train_rows": 1920,
+  "validation_rows": 651,
+  "train_captures": 204,
+  "validation_captures": 69,
+  "train_validation_capture_overlap": 0,
+  "train_reconstruction": {
+    "matched_rows": 1920,
+    "unmatched_rows": 0,
+    "match_rate": 1.0
+  },
+  "validation_reconstruction": {
+    "matched_rows": 651,
+    "unmatched_rows": 0,
+    "match_rate": 1.0
+  },
+  "feature_builder_parity": {
+    "status": "VERIFIED_FOR_TRAINING_AND_VALIDATION",
+    "feature_cell_match_rate": 1.0,
+    "availability_flags_are_model_inputs": false
+  },
+  "heldout_evaluation": {
+    "windows": 508,
+    "accuracy": 0.9626,
+    "balanced_accuracy": 0.9516,
+    "macro_f1": 0.945,
+    "weighted_f1": 0.9622
+  },
+  "live_inference_verified": false,
+  "notes": [
+    "The model uses exactly 30 ordered input features.",
+    "The six availability flags are diagnostic only.",
+    "Training and validation reconstruction matched all retained rows.",
+    "Offline held-out evaluation does not establish live integration readiness."
+  ]
+}

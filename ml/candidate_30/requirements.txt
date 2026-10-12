@@ -1,0 +1,7 @@
+
+lightgbm
+scikit-learn==1.9.1
+joblib
+numpy
+pandas
+shap==0.53.0
