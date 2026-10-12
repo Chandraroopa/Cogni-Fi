@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Menu, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 function Navbar() {
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+
+  const location = useLocation();
+  const isHomePage = location.pathname === '/';
   const [menuOpen, setMenuOpen] = useState(false);
   const [showNavbar, setShowNavbar] = useState(true);
 
@@ -74,38 +77,33 @@ function Navbar() {
             </span>
           </Link>
 
-          <div className="hidden items-center gap-8 md:flex">
-            <Link
-              to="/"
-              className="relative py-2 text-sm font-medium text-cyan-400 no-underline"
-            >
-              Home
-              <span className="absolute bottom-0 left-0 h-[2px] w-full bg-cyan-400" />
-            </Link>
+          
+{isHomePage && (
+  <div className="hidden items-center gap-8 md:flex">
+    <Link
+      to="/"
+      className="relative py-2 text-sm font-medium text-cyan-400 no-underline"
+    >
+      Home
+      <span className="absolute bottom-0 left-0 h-[2px] w-full bg-cyan-400" />
+    </Link>
 
-            <a
-              href="#features"
-              className="text-sm font-medium text-slate-300 no-underline transition hover:text-cyan-400"
-            >
-              Features
-            </a>
+    <a
+      href="/#features"
+      className="text-sm font-medium text-slate-300 no-underline transition hover:text-cyan-400"
+    >
+      Features
+    </a>
 
-            <a
-              href="#how-it-works"
-              className="text-sm font-medium text-slate-300 no-underline transition hover:text-cyan-400"
-            >
-              How It Works
-            </a>
+    <a
+      href="/#how-it-works"
+      className="text-sm font-medium text-slate-300 no-underline transition hover:text-cyan-400"
+    >
+      How It Works
+    </a>
+  </div>
+)}
 
-            {isAuthenticated && (
-              <Link
-                to="/dashboard"
-                className="text-sm font-medium text-slate-300 no-underline transition hover:text-cyan-400"
-              >
-                Dashboard
-              </Link>
-            )}
-          </div>
 
           <div className="hidden items-center gap-3 md:flex">
             {!isAuthenticated && (
@@ -191,41 +189,34 @@ function Navbar() {
             </button>
           </div>
 
-          <div className="flex flex-col px-6 pt-8">
-            <Link
-              to="/"
-              onClick={closeMenu}
-              className="border-b border-white/10 py-5 text-lg font-medium text-cyan-400 no-underline"
-            >
-              Home
-            </Link>
+         
+{isHomePage && (
+  <div className="flex flex-col px-6 pt-6">
+    <Link
+      to="/"
+      onClick={closeMenu}
+      className="border-b border-white/10 py-5 text-lg font-medium text-cyan-400 no-underline"
+    >
+      Home
+    </Link>
 
-            <a
-              href="#features"
-              onClick={closeMenu}
-              className="border-b border-white/10 py-5 text-lg text-slate-300 no-underline transition hover:text-cyan-400"
-            >
-              Features
-            </a>
+    <a
+      href="/#features"
+      onClick={closeMenu}
+      className="border-b border-white/10 py-5 text-lg text-slate-300 no-underline transition hover:text-cyan-400"
+    >
+      Features
+    </a>
 
-            <a
-              href="#how-it-works"
-              onClick={closeMenu}
-              className="border-b border-white/10 py-5 text-lg text-slate-300 no-underline transition hover:text-cyan-400"
-            >
-              How It Works
-            </a>
-
-            {isAuthenticated && (
-              <Link
-                to="/dashboard"
-                onClick={closeMenu}
-                className="border-b border-white/10 py-5 text-lg text-slate-300 no-underline transition hover:text-cyan-400"
-              >
-                Dashboard
-              </Link>
-            )}
-          </div>
+    <a
+      href="/#how-it-works"
+      onClick={closeMenu}
+      className="border-b border-white/10 py-5 text-lg text-slate-300 no-underline transition hover:text-cyan-400"
+    >
+      How It Works
+    </a>
+  </div>
+)}
 
           <div className="mt-auto p-6">
             {!isAuthenticated && (

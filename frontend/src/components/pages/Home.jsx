@@ -6,7 +6,6 @@ import TrustScoreSection from '../home/TrustScoreSection';
 import CTASection from '../home/CTASection';
 import Navbar from '../common/Navbar';
 import Footer from '../common/Footer';
-import SectionNavigator from '../common/SectionNavigator';
 
 function Home() {
   return (
@@ -27,7 +26,6 @@ function Home() {
         <CTASection />
       </main>
 
-      <SectionNavigator />
       <Footer />
     </div>
   );

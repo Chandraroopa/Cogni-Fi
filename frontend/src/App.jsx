@@ -8,6 +8,8 @@ import SignUp from './components/pages/SignUp';
 import Dashboard from './components/pages/Dashboard';
 import WifiScan from './components/pages/WifiScan';
 import NetworkAnalysis from './components/pages/NetworkAnalysis';
+import History from './components/pages/History';
+import Alerts from './components/pages/Alerts';
 
 import { AuthProvider } from './context/AuthContext';
 
@@ -55,6 +57,28 @@ function App() {
                 </ProtectedRoute>
               }
             />
+
+            <Route
+  path="/history"
+  element={
+    <ProtectedRoute>
+      <Navbar />
+      <History />
+      <Footer />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/alerts"
+  element={
+    <ProtectedRoute>
+      <Navbar />
+      <Alerts />
+      <Footer />
+    </ProtectedRoute>
+  }
+/>
           </Routes>
 
         </div>
