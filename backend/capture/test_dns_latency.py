@@ -1,6 +1,6 @@
 ﻿import pytest
 
-from backend.capture.feature_window import _dns_latencies
+from backend.capture.feature_window import _dns_latencies, FeatureExtractor
 
 
 def packet(timestamp, transaction_id="1234", response=False,
@@ -61,3 +61,26 @@ def test_ignores_missing_id_or_invalid_timestamp():
                source="8.8.8.8", destination="192.168.1.10"),
     ]
     assert _dns_latencies(packets) == []
+
+
+def test_matches_dns_across_feature_windows():
+    extractor = FeatureExtractor(window_size=1.0)
+
+    request = packet(
+        100.1,
+        response=False,
+        source="192.168.1.10",
+        destination="8.8.8.8",
+    )
+    response = packet(
+        101.1,
+        response=True,
+        source="8.8.8.8",
+        destination="192.168.1.10",
+    )
+
+    first = extractor.extract_window_features([request], duration=1.0)
+    second = extractor.extract_window_features([response], duration=1.0)
+
+    assert first["dns_latency_mean"] == pytest.approx(0.0)
+    assert second["dns_latency_mean"] == pytest.approx(1.0)
