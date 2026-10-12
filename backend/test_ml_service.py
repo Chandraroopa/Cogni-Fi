@@ -5,7 +5,7 @@ import json
 import math
 from pathlib import Path
 
-from ml.candidate_30.predictor_30 import (
+from ml.inference.predictor import (
     load_predictor,
     predict_one,
 )
@@ -13,10 +13,9 @@ from ml.candidate_30.predictor_30 import (
 SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent
     / "ml"
-    / "candidate_30"
+    / "schemas"
     / "feature_schema.json"
 )
-
 
 def assert_probability(value: float, name: str) -> None:
     assert math.isfinite(value), f"{name} is not finite"

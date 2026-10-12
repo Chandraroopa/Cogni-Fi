@@ -1,4 +1,4 @@
-
+﻿
 import json
 from pathlib import Path
 
@@ -7,12 +7,12 @@ from backend.capture.feature_window import (
     FEATURE_NAMES,
     WIFI_AVAILABILITY_NAMES,
 )
-from ml.candidate_30.predictor_30 import predict_one
+from ml.inference.predictor import predict_one
 
 
 def main():
     print("=" * 65)
-    print("COGNIFI LIVE FEATURE → 30-FEATURE MODEL TEST")
+    print("COGNIFI LIVE FEATURE â†’ 30-FEATURE MODEL TEST")
     print("=" * 65)
 
     # Synthetic packet metadata for software integration testing only.

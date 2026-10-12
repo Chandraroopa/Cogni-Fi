@@ -1,9 +1,10 @@
+import api from '../../services/api';
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 function Dashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();  
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -23,10 +24,16 @@ function Dashboard() {
     setAnalysisResult(null);
 
     try {
-      const response = await fetch('http://localhost:5000/api/scan');
-      const data = await response.json();
+      const response = await api.get('/scan');
+const data = response.data;
       
-      setNetworks(data.networks || []);
+      setNetworks(
+  (data.networks || []).map((network) => ({
+    ...network,
+    signalPercentage:
+      network.signalPercentage ?? network.signal_percentage ?? null,
+  }))
+);
       if (data.currentConnection) {
         setSelectedNetwork(data.currentConnection);
       }
@@ -38,32 +45,38 @@ function Dashboard() {
   };
 
   const handleSelectNetwork = (network) => {
-    setSelectedNetwork(network);
-    setAnalysisResult(null); // Resets previous analysis result when changing selection
-  };
+  const getNetworkKey = (item) =>
+    item.ssid || item.name || item.network_name;
 
-  const handleAnalyze = () => {
-    if (!selectedNetwork) return;
-    
-    // Set local analysis result state
-    const result = {
-      status: selectedNetwork.security === 'Open' ? 'High Risk' : 'Secure',
-      threats: selectedNetwork.security === 'Open' ? 2 : 0,
-      recommendation: selectedNetwork.security === 'Open' 
-        ? 'Avoid sensitive transactions or use a VPN.' 
-        : 'Network encryption looks robust.'
-    };
+  setSelectedNetwork((current) => {
+    if (
+      current &&
+      getNetworkKey(current) === getNetworkKey(network)
+    ) {
+      return null; // Click again to deselect
+    }
 
-    setAnalysisResult(result);
+    return network; // Select only this network
+  });
 
-    // Navigate to the detailed network analysis page and pass data via state
-    navigate('/network-analysis', { 
-      state: { 
-        network: selectedNetwork, 
-        analysis: result 
-      } 
-    });
-  };
+  setAnalysisResult(null);
+};
+
+  
+const handleAnalyze = () => {
+  if (!selectedNetwork) return;
+
+  // No verified ML analysis endpoint is available yet.
+  // Pass only the selected network to the analysis page.
+  setAnalysisResult(null);
+
+  navigate('/network-analysis', {
+    state: {
+      network: selectedNetwork,
+    },
+  });
+};
+
 
   const getSignalLabel = (signal) => {
     if (signal >= 80) return 'Excellent';
@@ -127,7 +140,6 @@ function Dashboard() {
   const sidebarItems = [
     { label: 'Dashboard', icon: 'activity', active: true },
     { label: 'Wi-Fi Scan', icon: 'wifi' },
-    { label: 'Analysis', icon: 'activity' },
     { label: 'History', icon: 'history' },
     { label: 'Alerts', icon: 'bell' },
     { label: 'Settings', icon: 'settings' },
@@ -176,6 +188,8 @@ function Dashboard() {
                     setSidebarOpen(false);
                     if (item.label === 'Dashboard') navigate('/dashboard');
                     if (item.label === 'Wi-Fi Scan') navigate('/wifi-scan');
+                    if (item.label === 'History') navigate('/history');
+                    if (item.label === 'Alerts') navigate('/alerts');
                   }}
                   className={`group flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition ${item.active ? 'border border-cyan-400/20 bg-cyan-400/10 text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.06)]' : 'text-slate-400 hover:bg-white/[0.03] hover:text-white'}`}
                 >
@@ -186,14 +200,40 @@ function Dashboard() {
             </div>
           </nav>
 
-          <div className="border-t border-slate-800/70 p-4">
+                    <div className="border-t border-slate-800/70 p-4">
             <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-300"><Icon type="user" size={20} /></div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-300">
+                <Icon type="user" size={20} />
+              </div>
+
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">{user?.name || 'Bhoomika'}</p>
-                <p className="truncate text-xs text-slate-600">{user?.email || 'user@example.com'}</p>
+                <p className="truncate text-sm font-semibold text-white">
+                  {user?.user_metadata?.full_name ||
+                    user?.user_metadata?.name ||
+                    user?.email?.split('@')[0] ||
+                    'User'}
+                </p>
+                <p className="truncate text-xs text-slate-600">
+                  {user?.email || ''}
+                </p>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await logout();
+                  navigate('/login', { replace: true });
+                } catch (error) {
+                  console.error('Logout failed:', error);
+                }
+              }}
+              className="mt-3 flex w-full items-center gap-3 rounded-xl border border-red-500/20 px-4 py-3 text-sm font-medium text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+            >
+              <span className="text-lg">↪</span>
+              <span>Logout</span>
+            </button>
           </div>
         </div>
       </aside>
@@ -252,7 +292,12 @@ function Dashboard() {
                 </div>
                 <div>
                   <p className="text-sm text-slate-400">Your Trust Score</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{selectedNetwork ? (selectedNetwork.security === 'Open' ? '42' : '95') : '--'}</p>
+
+<p className="mt-1 text-3xl font-bold text-white">
+  {selectedNetwork
+    ? selectedNetwork.trust_score ?? selectedNetwork.trustScore ?? '--'
+    : '--'}
+</p>
                   <p className="mt-1 text-xs text-slate-600">Select a network</p>
                 </div>
               </div>
@@ -308,9 +353,45 @@ function Dashboard() {
               {!scanning && networks.length > 0 && (
                 <div className="mt-4 space-y-2">
                   {networks.map((network) => {
-                    const selected = selectedNetwork?.id === network.id || selectedNetwork?.name === network.name;
-                    return (
-                      <div key={network.id || network.name} className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${selected ? 'border-cyan-400/70 bg-cyan-400/[0.06]' : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'}`}>
+  const signalPercentage = (() => {
+    const percentage = Number(network.signalPercentage);
+
+    // Use the backend percentage when it is valid.
+    if (
+      network.signalPercentage !== null &&
+      network.signalPercentage !== undefined &&
+      network.signalPercentage !== '' &&
+      Number.isFinite(percentage) &&
+      percentage >= 0 &&
+      percentage <= 100
+    ) {
+      return percentage;
+    }
+
+    // Otherwise, convert a negative dBm signal reading.
+    const signalDbm = Number(network.signal);
+
+    if (
+      network.signal !== null &&
+      network.signal !== undefined &&
+      network.signal !== '' &&
+      Number.isFinite(signalDbm) &&
+      signalDbm >= -100 &&
+      signalDbm < 0
+    ) {
+      return Math.round(
+        Math.max(0, Math.min(100, 2 * (signalDbm + 100)))
+      );
+    }
+
+    return null;
+  })();
+
+  const selected =
+  selectedNetwork != null &&
+  (selectedNetwork.ssid || selectedNetwork.name || selectedNetwork.network_name) ===
+    (network.ssid || network.name || network.network_name);                 return (
+                      <div key={network.ssid || network.name || network.network_name} className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${selected ? 'border-cyan-400/70 bg-cyan-400/[0.06]' : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'}`}>
                         <div className="flex items-center gap-3">
                           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-cyan-400/15 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}><Icon type="wifi" size={19} /></div>
                           <div className="min-w-0">
@@ -322,13 +403,19 @@ function Dashboard() {
                         <div className="flex items-center gap-3">
                           <div className="flex items-end gap-[3px]">
                             {[1, 2, 3, 4].map((bar) => {
-                              const active = network.signal >= bar * 25;
-                              return <span key={bar} className={`w-[4px] rounded-sm ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'} ${active ? getSignalBarColor(network.signal) : 'bg-slate-800'}`} />;
+                              const active = network.signalPercentage >= bar * 25;
+                              return <span key={bar} className={`w-[4px] rounded-sm ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'} ${active ? getSignalBarColor(network.signalPercentage) : 'bg-slate-800'}`} />;
                             })}
                           </div>
                           <div>
-                            <p className={`text-sm font-semibold ${getSignalTextColor(network.signal)}`}>{network.signal}%</p>
-                            <p className="text-[10px] text-slate-600">{getSignalLabel(network.signal)}</p>
+                            
+<p className={`text-sm font-semibold ${getSignalTextColor(network.signalPercentage)}`}>
+  {network.signalPercentage}%
+</p>
+<p className="text-[10px] text-slate-600">
+  {getSignalLabel(network.signalPercentage)}
+</p>
+
                           </div>
                         </div>
 
@@ -387,25 +474,7 @@ function Dashboard() {
                 )}
               </div>
 
-              {analysisResult && (
-                <div className="rounded-2xl border border-cyan-400/20 bg-slate-950/60 p-6 shadow-xl shadow-black/20 backdrop-blur-xl animate-fadeIn">
-                  <h3 className="mb-4 text-lg font-semibold text-cyan-400">Analysis Results</h3>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between border-b border-slate-800 pb-2">
-                      <span className="text-slate-400">Status:</span>
-                      <span className={analysisResult.status === 'High Risk' ? 'text-pink-400 font-semibold' : 'text-cyan-400 font-semibold'}>{analysisResult.status}</span>
-                    </div>
-                    <div className="flex justify-between border-b border-slate-800 pb-2">
-                      <span className="text-slate-400">Threats Detected:</span>
-                      <span className="text-white font-semibold">{analysisResult.threats}</span>
-                    </div>
-                    <div>
-                      <p className="text-slate-400 mb-1">Recommendation:</p>
-                      <p className="text-slate-300 text-xs leading-relaxed bg-slate-900/50 p-3 rounded-lg border border-slate-800">{analysisResult.recommendation}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              
             </div>
           </section>
         </div>

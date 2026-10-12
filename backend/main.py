@@ -11,8 +11,8 @@ from backend.capture.feature_window import (
     CausalWindowManager,
     FeatureExtractor,
 )
-from backend.capture.live_detector import LiveRiskDetector
-
+from backend.ml_service import ml_service
+from backend.risk_engine import RiskEngine
 
 app = FastAPI(title="Cognifi Wi-Fi Security Backend")
 
@@ -77,7 +77,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     extractor = FeatureExtractor(window_size=1.0)
     window_manager = CausalWindowManager(window_size=1.0)
-    detector = LiveRiskDetector()
+    risk_engine = RiskEngine()
 
     packet_queue = asyncio.Queue(maxsize=2000)
     stop_event = threading.Event()
@@ -94,6 +94,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     last_status_time = loop.time()
 
+
     async def process_windows(windows):
         """Extract features and send risk updates for completed windows."""
         for window in windows:
@@ -106,19 +107,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 window_packets,
                 duration=1.0,
             )
-            risk = detector.analyze(features)
+
+            ml_result = ml_service.analyze(features)
+
+            risk = risk_engine.analyze(
+                mode="live",
+                ml_result=ml_result,
+                behavioral_features=None,
+                security=None,
+            )
 
             await websocket.send_json({
                 "type": "risk_update",
                 "features": features,
+                "ml": ml_result,
                 "risk": risk,
             })
 
             print(
                 f"[RISK] Window {window.get('window_id', '?')} "
                 f"| Packets: {len(window_packets)} "
-                f"| {risk.get('risk_level', 'Unknown')} "
-                f"| Score: {risk.get('risk_score', 'N/A')}"
+                f"| Status: {risk.get('status', 'Unknown')} "
+                f"| Score: {risk.get('risk_score', 'N/A')} "
+                f"| Predicted class: "
+                f"{ml_result.get('predicted_class', 'Unknown')}"
             )
 
     try:

@@ -1,11 +1,11 @@
-
+﻿
 """SHAP explanations for Cognifi's 30-feature multiclass model."""
 
 import numpy as np
 import pandas as pd
 import shap
 
-from ml.candidate_30.predictor_30 import load_predictor
+from ml.inference.predictor import load_predictor
 
 
 def explain_one(feature_values, top_n=10):

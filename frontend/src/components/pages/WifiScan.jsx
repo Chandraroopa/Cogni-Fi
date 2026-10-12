@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
 
 function WifiScan() {
   const navigate = useNavigate();
+  const [scanError, setScanError] = useState('');
 
   const [scanning, setScanning] = useState(false);
   const [networks, setNetworks] = useState([]);
@@ -57,16 +59,69 @@ function WifiScan() {
   // START WIFI SCAN
   // ------------------------------------------------------------
 
-  const handleScan = () => {
-    setScanning(true);
-    setSelectedNetwork(null);
+  
+const handleScan = async () => {
+  setScanning(true);
+  setSelectedNetwork(null);
+  setScanError('');
 
-    // Temporary simulation
-    setTimeout(() => {
-      setNetworks(mockNetworks);
-      setScanning(false);
-    }, 1800);
+  try {
+    const response = await api.get('/scan');
+    const data = response.data;
+
+    if (!data.success || !Array.isArray(data.networks)) {
+      throw new Error('Unexpected response from the Wi-Fi scanner.');
+    }
+
+    
+const mappedNetworks = data.networks.map((item, index) => {
+  const signalDbm = Number(item.signal);
+  const rawPercentage = Number(item.signal_percentage);
+
+  // Prefer the percentage supplied by the backend.
+  // Otherwise, estimate it from the dBm signal strength.
+  const signalPercentage = Number.isFinite(rawPercentage)
+    && item.signal_percentage !== null
+    && item.signal_percentage !== ''
+    ? Math.max(0, Math.min(100, rawPercentage))
+    : Number.isFinite(signalDbm)
+      ? Math.max(0, Math.min(100, 2 * (signalDbm + 100)))
+      : 0;
+
+  return {
+    ...item,
+    id: item.bssid || `${item.ssid || 'network'}-${index}`,
+    name: item.ssid || item.name || 'Hidden network',
+    signal: Number.isFinite(signalDbm) ? signalDbm : -100,
+    signalPercentage,
+    security: item.security || item.encryption || 'Unknown',
+    encryption: item.encryption || item.security || 'Unknown',
+    channel: item.channel ?? 'Unknown',
+    frequency: item.frequency ?? 'Not provided',
   };
+});
+
+setNetworks(mappedNetworks);
+
+
+    if (mappedNetworks.length === 0) {
+      setScanError(
+        'No networks were returned. Check Windows Wi-Fi permissions and backend output.'
+      );
+    }
+  } catch (error) {
+    console.error('Wi-Fi scan failed:', error);
+    setNetworks([]);
+    setScanError(
+      error.response
+        ? `Wi-Fi scan failed (HTTP ${error.response.status}).`
+        : error.message || 'Could not connect to the Wi-Fi scanner.'
+    );
+  } finally {
+    setScanning(false);
+  }
+};
+
 
   // ------------------------------------------------------------
   // SELECT NETWORK
@@ -386,8 +441,8 @@ function WifiScan() {
                                       ? 'h-4'
                                       : 'h-5'
                               } ${
-                                network.signal >= bar * 25
-                                  ? getSignalBarColor(network.signal)
+                                network.signalPercentage >= bar * 25
+                                  ? getSignalBarColor(network.signalPercentage)
                                   : 'bg-slate-800'
                               }`}
                             />
@@ -403,11 +458,11 @@ function WifiScan() {
                               network.signal
                             )}`}
                           >
-                            {network.signal}%
+                            {network.signalPercentage}%
                           </p>
 
                           <p className="text-[10px] text-slate-600">
-                            {getSignalLabel(network.signal)}
+                            {getSignalLabel(network.signalPercentage)}
                           </p>
 
                         </div>
@@ -471,27 +526,38 @@ function WifiScan() {
             INITIAL STATE
         ===================================================== */}
 
-        {!scanning && networks.length === 0 && (
+        
+{!scanning && networks.length === 0 && (
 
-          <section className="flex min-h-[450px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-5 text-center backdrop-blur-xl">
+  <section className="flex min-h-[450px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 px-5 text-center backdrop-blur-xl">
 
-            <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-400">
-              <WifiIcon size={42} />
-            </div>
+    {scanError && (
+      <p
+        role="alert"
+        className="mb-6 max-w-md rounded-lg border border-pink-400/20 bg-pink-400/5 px-4 py-3 text-sm text-pink-300"
+      >
+        {scanError}
+      </p>
+    )}
 
-            <h2 className="text-xl font-semibold text-slate-300">
-              Ready to scan
-            </h2>
+    <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-400">
+      <WifiIcon size={42} />
+    </div>
 
-            <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
-              Start a Wi-Fi scan to discover available networks.
-              Once a network is selected, you can proceed with
-              security analysis.
-            </p>
+    <h2 className="text-xl font-semibold text-slate-300">
+      {scanError ? 'Scan unsuccessful' : 'Ready to scan'}
+    </h2>
 
-          </section>
+    <p className="mt-2 max-w-md text-sm leading-6 text-slate-600">
+      {scanError
+        ? 'Check that the backend is running and Windows allows Wi-Fi scanning, then try again.'
+        : 'Start a Wi-Fi scan to discover available networks. Once a network is selected, you can proceed with security analysis.'}
+    </p>
 
-        )}
+  </section>
+
+)}
+
 
 
         {/* =====================================================
@@ -542,10 +608,10 @@ function WifiScan() {
 
                     <span
                       className={getSignalColor(
-                        selectedNetwork.signal
+                        selectedNetwork.signalPercentage
                       )}
                     >
-                      Signal {selectedNetwork.signal}%
+                      Signal {selectedNetwork.signalPercentage}%
                     </span>
 
                   </div>
