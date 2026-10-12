@@ -1,169 +1,149 @@
 import math
+
 try:
     from .risk_config import BEHAVIOR_GROUPS
 except ImportError:
     from risk_config import BEHAVIOR_GROUPS
 
+
+# These flags come from Person 2's capture metadata.
+WIFI_AVAILABILITY_FLAGS = {
+    "retry_rate": "wifi_retry_available",
+    "deauth_rate": "wifi_management_frames_available",
+    "disassoc_rate": "wifi_management_frames_available",
+}
+
+
 class BehavioralSeverityEngine:
+
     def __init__(self, baseline=None):
         self.baseline = baseline or {}
 
-    # ---------------------------------------------------------
-    # Basic severity conversion
-    # ---------------------------------------------------------
     @staticmethod
     def upper_tail_severity(value, p95, p99):
-
-        if value is None:
+        if any(isinstance(v, bool) for v in (value, p95, p99)):
             return None
 
         try:
             value = float(value)
             p95 = float(p95)
             p99 = float(p99)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
 
-        if not all(math.isfinite(v) for v in (value, p95, p99)) or p95 < 0 or p99 < p95:
+        if not all(math.isfinite(v) for v in (value, p95, p99)):
+            return None
+
+        if value < 0 or p95 < 0 or p99 < p95:
             return None
 
         if value <= p95:
             return 0.0
-        # Handles zero-heavy indicators such as deauth events.
-        if p99 <= p95:
+
+        if p99 == p95:
             return 100.0
 
         if value >= p99:
             return 100.0
 
-        severity = (
-            (value - p95)
-            / (p99 - p95)
-            * 100.0
-        )
-
         return round(
-            max(0.0, min(100.0, severity)),
+            100.0 * (value - p95) / (p99 - p95),
             2,
         )
 
-    # ---------------------------------------------------------
-    # Score one behavioral feature
-    # ---------------------------------------------------------
     def score_feature(self, feature_name, value):
+        thresholds = self.baseline.get(feature_name)
 
-        thresholds = self.baseline.get(
-            feature_name
-        )
-        # No validated baseline -> no score.
-        if thresholds is None:
+        if not isinstance(thresholds, dict):
             return None
 
-        if (
-            "p95" not in thresholds
-            or "p99" not in thresholds
-        ):
+        if "p95" not in thresholds or "p99" not in thresholds:
             return None
 
         return self.upper_tail_severity(
-            value=value,
-            p95=thresholds["p95"],
-            p99=thresholds["p99"],
+            value,
+            thresholds["p95"],
+            thresholds["p99"],
         )
 
-    # ---------------------------------------------------------
-    # Analyze behavioral evidence
-    # ---------------------------------------------------------
-    def analyze(self, features):
+    @staticmethod
+    def is_available(feature_name, availability):
+        if not isinstance(availability, dict):
+            return False
 
-        if not isinstance(features, dict):
-            return {
-                "risk": None,
-                "groups": {},
-                "features": {},
-                "missing_features": [],
-                "unscored_features": [],
-                "baseline_available": bool(self.baseline),
-            }
+        # Explicit per-feature verdict takes priority.
+        if feature_name in availability:
+            return availability[feature_name] is True
+
+        # Allow Person 2's actual Wi-Fi availability flags.
+        flag = WIFI_AVAILABILITY_FLAGS.get(feature_name)
+
+        if flag is not None:
+            return availability.get(flag) is True
+
+        return False
+
+    def analyze(self, features, availability=None):
+        features = features if isinstance(features, dict) else {}
+        availability = (
+            availability if isinstance(availability, dict) else {}
+        )
 
         feature_severity = {}
         group_scores = {}
-
         missing_features = []
+        unavailable_features = []
         unscored_features = []
 
-        for (
-            group_name,
-            group_features
-        ) in BEHAVIOR_GROUPS.items():
-            available_scores = []
+        for group_name, group_features in BEHAVIOR_GROUPS.items():
+            scored_values = []
 
             for feature_name in group_features:
-                value = features.get(
-                    feature_name
-                )
+                value = features.get(feature_name)
 
                 if value is None:
-                    feature_severity[
-                        feature_name
-                    ] = None
-
-                    missing_features.append(
-                        feature_name
-                    )
-
+                    feature_severity[feature_name] = None
+                    missing_features.append(feature_name)
                     continue
 
-                severity = self.score_feature(
-                    feature_name,
-                    value,
-                )
+                if not self.is_available(feature_name, availability):
+                    feature_severity[feature_name] = None
+                    unavailable_features.append(feature_name)
+                    continue
 
-                feature_severity[
-                    feature_name
-                ] = severity
+                severity = self.score_feature(feature_name, value)
+                feature_severity[feature_name] = severity
 
                 if severity is None:
-                    unscored_features.append(
-                        feature_name
-                    )
-
+                    unscored_features.append(feature_name)
                     continue
 
-                available_scores.append(
-                    severity
-                )
-            if available_scores:
-                group_scores[group_name] = round(
-                    max(available_scores),
-                    2,
-                )
+                scored_values.append(severity)
 
-            else:
-                group_scores[group_name] = None
+            group_scores[group_name] = (
+                round(max(scored_values), 2)
+                if scored_values
+                else None
+            )
 
-        available_group_scores = [
+        valid_group_scores = [
             score
             for score in group_scores.values()
             if score is not None
         ]
 
-        if available_group_scores:
-            behavioral_risk = round(
-                sum(available_group_scores)
-                / len(available_group_scores),
-                2,
-            )
-        else:
-            behavioral_risk = None
+        behavioral_risk = (
+            round(sum(valid_group_scores) / len(valid_group_scores), 2)
+            if valid_group_scores
+            else None
+        )
 
         return {
             "risk": behavioral_risk,
             "groups": group_scores,
             "features": feature_severity,
             "missing_features": missing_features,
+            "unavailable_features": unavailable_features,
             "unscored_features": unscored_features,
-            "baseline_available": bool(
-                self.baseline
-            ),
+            "baseline_available": bool(self.baseline),
         }

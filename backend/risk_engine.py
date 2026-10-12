@@ -99,14 +99,12 @@ class RiskEngine:
                 return empty
             if abs(sum(float(x) for x in probs.values()) - 1) > 1e-4:
                 return empty
-            # This score is a monotonic evidence index, NOT an actual attack probability.
-            # The predicted class remains the independent model decision.
+            
             score = round(100 * p, 2)
             attack = predicted if is_threat else None
             evidence = {'model_type': 'multiclass_30', 'binary': None, 'multiclass': dict(ml_result)}
             return score, evidence, attack, confidence if attack else None, is_threat
 
-        # Legacy model output; retained to simplify a team transition.
         binary = ml_result.get('binary') if 'binary' in ml_result else ml_result
         multiclass = ml_result.get('multiclass') if 'binary' in ml_result else None
         if not isinstance(binary, Mapping) or type(binary.get('is_threat')) is not bool:
@@ -153,7 +151,7 @@ class RiskEngine:
             return 'Safe'
         return 'Unverified'  # missing evidence is NOT proof of suspicious activity
 
-    def analyze(self, mode='live', ml_result=None, behavioral_features=None, security=None):
+    def analyze(self, mode='live', ml_result=None, behavioral_features=None, security=None, behavioral_availability=None):
         mode = str(mode).strip().lower()
         if mode not in ('live', 'preliminary'):
             raise ValueError("Mode must be 'live' or 'preliminary'")
@@ -163,7 +161,10 @@ class RiskEngine:
         if mode == 'live':
             ml_score, ml_evidence, attack_type, attack_confidence, ml_threat = self.parse_ml_evidence(ml_result)
             if behavioral_features is not None:
-                behavior_result = self.behavior_engine.analyze(behavioral_features)
+                behavior_result = self.behavior_engine.analyze(
+                    behavioral_features,
+                    availability=behavioral_availability,
+                )
                 # Partial behavioral inputs remain diagnostic; do not call them a full component.
                 group_scores = behavior_result.get('groups', {})
                 if group_scores and all(value is not None for value in group_scores.values()) and not behavior_result.get('missing_features'):

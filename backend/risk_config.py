@@ -26,17 +26,11 @@ ENCRYPTION_RISK = {
 }
 
 BEHAVIOR_GROUPS = {
-    "identity": [
-        "bssid_switch_rate",
-        "channel_switch_rate",
-    ],
-
     "management": [
         "retry_rate",
         "deauth_rate",
         "disassoc_rate",
     ],
-
     "network": [
         "dns_latency_mean",
         "retransmission_rate",

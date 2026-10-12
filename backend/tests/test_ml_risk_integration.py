@@ -1,6 +1,6 @@
 import pytest
 
-from ml.candidate_30.predictor_30 import predict_one, load_predictor
+from ml.inference.predictor import predict_one, load_predictor
 from backend.risk_engine import RiskEngine
 
 
