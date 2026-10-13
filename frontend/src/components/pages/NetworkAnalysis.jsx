@@ -44,7 +44,8 @@ console.log('Channel:', network?.channel);
 console.log('Encryption:', network?.encryption || network?.security);
 
   const [loading, setLoading] = useState(true);
-const [apiError, setApiError] = useState('');
+  const [apiError, setApiError] = useState('');
+  const [signalHistory, setSignalHistory] = useState([]);
   const [details, setDetails] = useState({
     devices: [],
     connections: [],
@@ -85,32 +86,172 @@ useEffect(() => {
     });
 }, []);
 
+  
+  // Read genuine Wi-Fi signal measurements from the backend.
+  // This endpoint must return Windows-reported RSSI in dBm.
+  useEffect(() => {
+    let cancelled = false;
+    let requestInProgress = false;
+    let intervalId;
+
+    const fetchWifiSignal = async () => {
+      if (cancelled || requestInProgress) return;
+
+      requestInProgress = true;
+
+      try {
+        const response = await api.get('/wifi-signal');
+        const data = response.data;
+
+        if (
+          cancelled ||
+          data?.available !== true ||
+          typeof data.rssi_dbm !== 'number' ||
+          !Number.isFinite(data.rssi_dbm) ||
+          data.rssi_dbm > 0
+        ) {
+          return;
+        }
+
+        const parsedTimestamp = data.timestamp
+          ? Date.parse(data.timestamp)
+          : Date.now();
+
+        const point = {
+          timestamp: Number.isFinite(parsedTimestamp)
+            ? parsedTimestamp
+            : Date.now(),
+          signal: data.rssi_dbm,
+          signalPercent:
+            typeof data.signal_percent === 'number'
+              ? data.signal_percent
+              : null,
+        };
+
+        setSignalHistory((previous) =>
+          [...previous, point].slice(-60)
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.error(
+            'Failed to fetch Windows Wi-Fi signal:',
+            error
+          );
+        }
+      } finally {
+        requestInProgress = false;
+      }
+    };
+
+    fetchWifiSignal();
+    intervalId = setInterval(fetchWifiSignal, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
 
 
-  const signalValue = network.signal || 0;
+  
+  const encryptionInfo = `${network.encryption || ''} ${network.security || ''}`
+    .trim()
+    .toUpperCase();
+
+  const encryptionStatus = encryptionInfo.includes('WEP')
+    ? {
+        title: 'Weak Encryption',
+        label: 'WEP',
+        description:
+          'This network uses WEP encryption, which is outdated and should not be relied on for security.',
+        color: 'red',
+      }
+    : !encryptionInfo ||
+      encryptionInfo.includes('UNKNOWN') ||
+      encryptionInfo.includes('OPEN') ||
+      encryptionInfo === 'NONE'
+    ? {
+        title: 'Open or Unknown Encryption',
+        label: 'Needs Attention',
+        description:
+          'Encryption is open or could not be verified. Avoid sensitive activities until the network security is confirmed.',
+        color: 'red',
+      }
+    : encryptionInfo.includes('WPA3') ||
+      encryptionInfo.includes('WPA2')
+    ? {
+        title: 'Encryption Detected',
+        label: 'Threat Status Unverified',
+        description:
+          'WPA encryption is detected. This indicates link protection, but does not prove that the network is free of threats.',
+        color: 'amber',
+      }
+    : {
+        title: 'Encryption Needs Review',
+        label: 'Threat Status Unverified',
+        description:
+          'The encryption type is not recognized by this check. A network-specific threat assessment is not available.',
+        color: 'amber',
+      };
+
+  const statusColors = {
+    red: {
+      border: 'border-red-400/30',
+      background: 'bg-red-400/10',
+      icon: 'bg-red-400/15 text-red-300',
+      title: 'text-red-300',
+      badge: 'border-red-400/30 text-red-300',
+    },
+    amber: {
+      border: 'border-amber-400/30',
+      background: 'bg-amber-400/10',
+      icon: 'bg-amber-400/15 text-amber-300',
+      title: 'text-amber-300',
+      badge: 'border-amber-400/30 text-amber-300',
+    },
+  };
+
+  const statusColor = statusColors[encryptionStatus.color];
+
+
+  // A single selected-network value is not a time series. Do not manufacture
+  // historical samples from it; only show a reading when it is a real numeric
+  // RSSI value in dBm. A zero/default placeholder is not a valid measurement.
+  
+  const latestSignal = signalHistory.length
+    ? signalHistory[signalHistory.length - 1]
+    : null;
+
+  const hasCurrentSignal = latestSignal !== null;
+  const rawSignalValue = latestSignal?.signal;
+  const currentSignalPercent = latestSignal?.signalPercent;
+
+  const hasSignalHistory = signalHistory.length > 0;
+
   const signalData = {
-    labels: ['10s ago', '8s ago', '6s ago', '4s ago', '2s ago', 'Now'],
+    labels: signalHistory.map((point) =>
+      new Date(point.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    ),
     datasets: [
       {
-        fill: true,
-        label: 'Signal Quality (%)',
-        data: [
-          Math.max(0, signalValue + 4),
-          Math.max(0, signalValue + 2),
-          Math.max(0, signalValue + 5),
-          Math.max(0, signalValue + 1),
-          Math.max(0, signalValue + 3), 
-          signalValue
-        ],
+        fill: false,
+        label: 'Windows Wi-Fi Signal (dBm)',
+        data: signalHistory.map((point) => point.signal),
         borderColor: '#06b6d4',
         backgroundColor: 'rgba(6, 182, 212, 0.2)',
         borderWidth: 3,
         pointBackgroundColor: '#06b6d4',
         pointBorderColor: '#ffffff',
         pointBorderWidth: 2,
-        pointRadius: 4,
+        pointRadius: 2,
         pointHoverRadius: 6,
-        tension: 0.4,
+        pointHitRadius: 10,
+        tension: 0,
+        spanGaps: false,
       },
     ],
   };
@@ -130,8 +271,25 @@ useEffect(() => {
       }
     },
     scales: {
-      y: { min: -100, max: 0, grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#64748b', font: { size: 11 } } },
-      x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } } }
+      y: {
+  min: -100,
+  max: 0,
+  title: {
+    display: true,
+    text: 'Signal strength (dBm)',
+    color: '#94a3b8',
+  },
+  ticks: {
+    stepSize: 10,
+    color: '#64748b',
+    font: { size: 11 },
+  },
+  grid: {
+    color: 'rgba(255, 255, 255, 0.06)',
+  },
+},
+      x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 }, maxTicksLimit: 8,
+    autoSkip: true, } }
     }
   };
 
@@ -195,26 +353,50 @@ useEffect(() => {
         </div>
 
         
+                
         {/* Network Security Status Banner */}
-        <div className="mb-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-5">
+        <div
+          className={`mb-6 rounded-2xl border ${statusColor.border} ${statusColor.background} p-5`}
+        >
           <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-400/15 text-amber-300">
+            <div
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${statusColor.icon}`}
+            >
               <span className="text-2xl font-bold">!</span>
             </div>
 
-            <div>
-              <h2 className="text-lg font-bold text-amber-300">
-                Security Assessment Pending
-              </h2>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className={`text-lg font-bold ${statusColor.title}`}>
+                  {encryptionStatus.title}
+                </h2>
+                <span
+                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusColor.badge}`}
+                >
+                  {encryptionStatus.label}
+                </span>
+              </div>
+
+              <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                Selected network:{' '}
+                <span className="font-semibold text-white">
+                  {network.name || network.ssid || 'Unknown Network'}
+                </span>
+              </p>
+
               <p className="mt-1 text-sm leading-relaxed text-slate-300">
-                The security of this network has not yet been verified by
-                the threat detection model. Avoid sensitive activities until
-                an assessment is available.
+                Encryption:{' '}
+                <span className="font-semibold text-white">
+                  {network.encryption || network.security || 'Unknown'}
+                </span>
+              </p>
+
+              <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                {encryptionStatus.description}
               </p>
             </div>
           </div>
         </div>
-
 
         {apiError && (
   <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
@@ -224,12 +406,25 @@ useEffect(() => {
         {/* Behavioral Metrics Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8">
           
-          {/* 1. Signal Strength */}
-          <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-cyan-500/40 transition duration-300 shadow-xl">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Signal Strength</p>
-            <p className="text-3xl font-black text-cyan-400 mt-2 tracking-tight">{network.signal} dBm</p>
-            <p className="text-xs text-slate-400 mt-2">Channel: {network.channel} • Wireless RSSI</p>
-          </div>
+{/* 1. Signal Strength */}
+<div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-cyan-500/40 transition duration-300 shadow-xl">
+  <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold">Signal Strength</p>
+
+  <p className="text-3xl font-black text-cyan-400 mt-2 tracking-tight">
+    {hasCurrentSignal ? `${rawSignalValue} dBm` : 'Unavailable'}
+  </p>
+
+  <p className="text-xs text-slate-400 mt-2">
+    {hasCurrentSignal
+      ? `Windows Wi-Fi RSSI${
+          typeof currentSignalPercent === 'number'
+            ? ` • ${currentSignalPercent}% signal`
+            : ''
+        }`
+      : 'Waiting for Windows Wi-Fi telemetry'}
+  </p>
+</div>
+
 
           {/* 2. DNS Latency */}
           <div className="bg-slate-950/60 border border-slate-800/80 p-6 rounded-3xl backdrop-blur-xl hover:border-blue-500/40 transition duration-300 shadow-xl">
@@ -284,8 +479,19 @@ useEffect(() => {
             <h2 className="text-base font-bold text-cyan-400 mb-4 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400"></span> Signal Strength Fluctuation Trend
             </h2>
-            <div className="h-[260px] w-full">
-              <Line data={signalData} options={signalOptions} />
+            <div className="h-[260px] w-full relative">
+              {hasSignalHistory ? (
+                <Line data={signalData} options={signalOptions} />
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/30 px-5 text-center">
+                  <span className="text-sm font-semibold text-slate-300">Signal strength unavailable</span>
+                  
+<span className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">
+  Waiting for real Windows Wi-Fi signal measurements. New readings are requested every two seconds; the x-axis shows the measurement timestamp.
+</span>
+
+                </div>
+              )}
             </div>
           </div>
           

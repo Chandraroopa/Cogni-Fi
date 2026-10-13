@@ -171,7 +171,7 @@ const handleAnalyze = () => {
     { label: 'Dashboard', icon: 'activity', active: true },
     { label: 'Wi-Fi Scan', icon: 'wifi' },
     { label: 'History', icon: 'history' },
-    { label: 'Alerts', icon: 'bell' },
+    //{ label: 'Alerts', icon: 'bell' },
     { label: 'Settings', icon: 'settings' },
   ];
 

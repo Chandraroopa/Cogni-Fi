@@ -5,6 +5,9 @@ from starlette.websockets import WebSocketDisconnect
 import asyncio
 import os
 import threading
+import re
+import subprocess
+from datetime import datetime, timezone
 
 from backend.capture.adapter import TSharkCapture
 from backend.capture.feature_window import (
@@ -65,6 +68,69 @@ def collect_packets(interface, packet_queue, stop_event, loop):
 
     finally:
         print("[TShark] Capture worker stopped.")
+
+    
+def get_windows_wifi_signal():
+    if os.name != "nt":
+        return {
+            "available": False,
+            "error": "Windows Wi-Fi telemetry is only available on Windows.",
+        }
+
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        output = result.stdout
+
+        signal_match = re.search(
+            r"^\s*Signal\s*:\s*(\d+)\s*%",
+            output,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        rssi_match = re.search(
+            r"^\s*Rssi\s*:\s*(-?\d+)",
+            output,
+            re.MULTILINE | re.IGNORECASE,
+        )
+
+        if not signal_match and not rssi_match:
+            return {
+                "available": False,
+                "error": "Windows did not report Wi-Fi signal values.",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+
+        return {
+            "available": True,
+            "source": "windows_wifi",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "signal_percent": (
+                int(signal_match.group(1)) if signal_match else None
+            ),
+            "rssi_dbm": (
+                int(rssi_match.group(1)) if rssi_match else None
+            ),
+        }
+
+    except (subprocess.SubprocessError, OSError) as exc:
+        return {
+            "available": False,
+            "error": str(exc),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+@app.get("/wifi-signal")
+def wifi_signal():
+    return get_windows_wifi_signal()
 
 
 @app.websocket("/ws")

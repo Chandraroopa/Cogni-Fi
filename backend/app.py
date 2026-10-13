@@ -4,11 +4,40 @@ import re
 from flask import Blueprint, Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
+import json
+from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
 
 app = Flask(__name__)
 CORS(app)  # Enables communication between your React frontend and Flask backend
 
 api_blueprint = Blueprint('api', __name__)
+
+@api_blueprint.route('/api/wifi-signal', methods=['GET'])
+def proxy_wifi_signal():
+    """Forward Wi-Fi signal requests to the FastAPI service."""
+    url = "http://127.0.0.1:8000/wifi-signal"
+
+    try:
+        with urlopen(url, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return jsonify(data), response.status
+
+    except HTTPError as exc:
+        try:
+            data = json.loads(exc.read().decode("utf-8"))
+            return jsonify(data), exc.code
+        except (ValueError, OSError):
+            return jsonify({
+                "available": False,
+                "error": "FastAPI returned an invalid error response."
+            }), 502
+
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        return jsonify({
+            "available": False,
+            "error": f"FastAPI Wi-Fi signal service unavailable: {exc}"
+        }), 502
 
 # Path pointing directly to your Wireshark CSV capture file
 DATA_FILE = os.path.join(os.path.dirname(__file__), 'normal_01.csv')
