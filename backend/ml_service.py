@@ -113,4 +113,6 @@ class CognifiMLService:
         }
 
 
+ml_service = CognifiMLService()
+
 
