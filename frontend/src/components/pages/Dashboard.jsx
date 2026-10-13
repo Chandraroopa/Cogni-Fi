@@ -1,5 +1,9 @@
 import api from '../../services/api';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import {
+  connectToPacketStream,
+  disconnectFromPacketStream,
+} from '../../services/websocket';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -11,8 +15,8 @@ function Dashboard() {
   const [scanning, setScanning] = useState(false);
   const [networks, setNetworks] = useState([]);
   const [selectedNetwork, setSelectedNetwork] = useState(null);
-  
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [streamStatus, setStreamStatus] = useState('connecting');
 
   // ============================================================
   // FETCH FROM FLASK API
@@ -61,6 +65,32 @@ const data = response.data;
 
   setAnalysisResult(null);
 };
+
+useEffect(() => {
+  const handlePacket = (packet) => {
+    if (packet?.type === 'risk_update') {
+      if (packet.risk && typeof packet.risk === 'object') {
+        console.log('Risk score:', packet.risk?.risk_score);
+console.log('Trust score:', packet.risk?.trust_score);
+console.log('Assessment:', packet.risk?.assessment);
+console.log('Status:', packet.risk?.status);
+console.log('Factors:', packet.risk?.factors);
+        setAnalysisResult(packet);
+      }
+    } else if (packet?.type === 'status') {
+      setStreamStatus('connected');
+    } else if (packet?.type === 'error') {
+      setStreamStatus('error');
+      console.error('Packet stream error:', packet.error);
+    }
+  };
+
+  connectToPacketStream(handlePacket, setStreamStatus);
+
+  return () => {
+    disconnectFromPacketStream();
+  };
+}, []);
 
   
 const handleAnalyze = () => {
@@ -278,7 +308,9 @@ const handleAnalyze = () => {
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-pink-400/25 bg-pink-400/10 text-pink-400"><Icon type="alert" size={29} /></div>
                 <div>
                   <p className="text-sm text-slate-400">Risks Detected</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{selectedNetwork?.security === 'Open' ? 1 : 0}</p>
+                  <p className="mt-1 text-3xl font-bold text-white">{typeof analysisResult?.risk?.risk_score === 'number'
+  ? analysisResult.risk.risk_score.toFixed(1)
+  : '--'}</p>
                   <p className="mt-1 text-xs text-slate-600">Active threats</p>
                 </div>
               </div>
@@ -295,8 +327,11 @@ const handleAnalyze = () => {
 
 <p className="mt-1 text-3xl font-bold text-white">
   {selectedNetwork
-    ? selectedNetwork.trust_score ?? selectedNetwork.trustScore ?? '--'
-    : '--'}
+  ? selectedNetwork.trust_score ??
+    selectedNetwork.trustScore ??
+    analysisResult?.risk?.trust_score ??
+    '--'
+  : '--'}
 </p>
                   <p className="mt-1 text-xs text-slate-600">Select a network</p>
                 </div>

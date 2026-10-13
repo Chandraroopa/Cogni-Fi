@@ -30,12 +30,11 @@ ChartJS.register(
 function NetworkAnalysis() {
   const location = useLocation();
   const navigate = useNavigate();
-  
-  const network = location.state?.network || { 
-    name: 'Unknown Network', 
-    signal: 0, 
-    security: 'WPA2-Personal', 
-    channel: 1 
+  const network = location.state?.network || {
+    name: 'Unknown Network',
+    signal: 0,
+    security: 'WPA2-Personal',
+    channel: 1
   };
 
   console.log('Selected network:', network);
@@ -46,16 +45,14 @@ console.log('Encryption:', network?.encryption || network?.security);
 
   const [loading, setLoading] = useState(true);
 const [apiError, setApiError] = useState('');
-  const [details, setDetails] = useState({ 
-    devices: [], 
+  const [details, setDetails] = useState({
+    devices: [],
     connections: [],
     dns_latency: 0.0,
     gateway_rtt: 0.0,
     beacon_interval: 0.0,
     packet_rate: 0.0
   });
-
-  
 
 useEffect(() => {
   setLoading(true);
@@ -98,10 +95,10 @@ useEffect(() => {
         fill: true,
         label: 'Signal Quality (%)',
         data: [
-          Math.max(0, signalValue + 4), 
-          Math.max(0, signalValue + 2), 
-          Math.max(0, signalValue + 5), 
-          Math.max(0, signalValue + 1), 
+          Math.max(0, signalValue + 4),
+          Math.max(0, signalValue + 2),
+          Math.max(0, signalValue + 5),
+          Math.max(0, signalValue + 1),
           Math.max(0, signalValue + 3), 
           signalValue
         ],
