@@ -123,7 +123,7 @@ class BehavioralSeverityEngine:
 
                 if not verified:
                     feature_severity[feature_name] = None
-                    unscored_features.append(feature_name)
+                    unavailable_features.append(feature_name)
                     continue
 
                 if value is None:
