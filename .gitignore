@@ -29,3 +29,5 @@ feature_selection/aligned_development/*.csv
 # Python / ML cache
 *.pkl
 .ipynb_checkpoints/
+
+.venv-model-test/
