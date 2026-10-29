@@ -1,0 +1,204 @@
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("[WS] Client connected.")
+
+    interface = os.getenv("COGNIFI_INTERFACE", "5")
+    loop = asyncio.get_running_loop()
+
+    extractor = FeatureExtractor(window_size=1.0)
+    window_manager = CausalWindowManager(window_size=1.0)
+    risk_engine = RiskEngine()
+
+    packet_queue = asyncio.Queue(maxsize=2000)
+    stop_event = threading.Event()
+
+    capture_task = asyncio.create_task(
+        asyncio.to_thread(
+            collect_packets,
+            interface,
+            packet_queue,
+            stop_event,
+            loop,
+        )
+    )
+
+    last_status_time = loop.time()
+    shutting_down = False
+
+    def websocket_is_connected():
+        return (
+            websocket.client_state == WebSocketState.CONNECTED
+            and not shutting_down
+        )
+
+    async def send_json_if_connected(payload):
+        """Send only while this handler still owns a connected client."""
+        if not websocket_is_connected():
+            return False
+
+        try:
+            await websocket.send_json(payload)
+            return True
+        except (WebSocketDisconnect, RuntimeError, OSError) as exc:
+            print(f"[WS] Send stopped: {exc}")
+            return False
+
+    async def process_windows(windows, send_updates=True):
+        """Extract features and analyse windows; optionally send to client."""
+        for window in windows:
+            window_packets = window.get("packets", [])
+
+            if not window_packets:
+                continue
+
+            features = extractor.extract_window_features(
+                window_packets,
+                duration=1.0,
+            )
+
+            ml_result = ml_service.analyze(features)
+
+            security = (
+                features.get("security")
+                if isinstance(features, dict)
+                else None
+            )
+
+            risk = risk_engine.analyze(
+                mode="live",
+                ml_result=ml_result,
+                behavioral_features=None,
+                security=security,
+            )
+
+            predicted_class = (
+                ml_result.get("predicted_class", "Unknown")
+                if isinstance(ml_result, dict)
+                else "Unknown"
+            )
+
+            print(
+                f"[RISK] Window {window.get('window_id', '?')} "
+                f"| Packets: {len(window_packets)} "
+                f"| Status: {risk.get('status', 'Unknown')} "
+                f"| Score: {risk.get('risk_score', 'N/A')} "
+                f"| Predicted class: {predicted_class}"
+            )
+
+            if not send_updates:
+                continue
+
+            sent = await send_json_if_connected({
+                "type": "risk_update",
+                "features": features,
+                "ml": ml_result,
+                "risk": risk,
+            })
+
+            if not sent:
+                # Do not keep attempting network sends after disconnect.
+                return
+
+    try:
+        print(f"[TShark] Starting capture on interface {interface}...")
+
+        while websocket_is_connected():
+            try:
+                packet = await asyncio.wait_for(
+                    packet_queue.get(),
+                    timeout=1.0,
+                )
+
+            except asyncio.TimeoutError:
+                if not websocket_is_connected():
+                    break
+
+                now = loop.time()
+
+                if now - last_status_time >= 5.0:
+                    await send_json_if_connected({
+                        "type": "status",
+                        "message": "Waiting for live packets...",
+                        "interface": interface,
+                    })
+                    last_status_time = now
+
+                if capture_task.done():
+                    worker_error = capture_task.exception()
+
+                    if worker_error is not None:
+                        raise RuntimeError(
+                            f"Capture worker failed: {worker_error}"
+                        )
+
+                    print("[TShark] Capture worker exited.")
+
+                    await send_json_if_connected({
+                        "type": "error",
+                        "error": (
+                            "The packet capture worker stopped. "
+                            "Check the backend terminal for capture errors."
+                        ),
+                    })
+                    break
+
+                continue
+
+            print(
+                "[PACKET] "
+                f"length={packet.get('length', packet.get('frame.len'))} "
+                f"| source={packet.get('source')} "
+                f"| destination={packet.get('destination')}"
+            )
+
+            completed_windows = window_manager.add_packet(packet)
+            await process_windows(completed_windows)
+
+    except WebSocketDisconnect:
+        print("[WS] Client disconnected.")
+
+    except asyncio.CancelledError:
+        print("[WS] Handler cancelled.")
+        raise
+
+    except Exception as exc:
+        print(f"[WS] Error: {exc}")
+
+        await send_json_if_connected({
+            "type": "error",
+            "error": str(exc),
+        })
+
+    finally:
+        # Set this before cleanup so no more messages are sent.
+        shutting_down = True
+        stop_event.set()
+
+        # Process buffered packets for analysis, without WebSocket sends.
+        try:
+            await process_windows(
+                window_manager.flush(),
+                send_updates=False,
+            )
+        except Exception as exc:
+            print(f"[WS] Final window processing error: {exc}")
+
+        # Give the worker time to exit after stop_event is set.
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(capture_task),
+                timeout=5.0,
+            )
+        except asyncio.TimeoutError:
+            print(
+                "[TShark] Capture worker did not exit within 5 seconds. "
+                "Check whether collect_packets can stop its TShark process."
+            )
+        except asyncio.CancelledError:
+            print("[TShark] Capture worker task was cancelled.")
+        except Exception as exc:
+            print(f"[TShark] Worker shutdown error: {exc}")
+
+        print("[WS] Connection cleanup complete.")

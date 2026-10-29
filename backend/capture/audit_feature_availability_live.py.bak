@@ -1,0 +1,86 @@
+
+from numbers import Real
+import math
+
+from backend.capture.adapter import TSharkCapture
+from backend.capture.feature_availability import FeatureAvailabilityAnalyzer
+from backend.capture.schema_aggregator import aggregate_schema_features
+from backend.capture.feature_engineering import WindowFeatureEngineer
+
+
+def valid_number(value):
+    return (
+        isinstance(value, Real)
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def main():
+    interface = "5"
+    packet_limit = 100
+
+    capture = TSharkCapture(interface=interface)
+    packets = []
+
+    print(
+        f"Capturing up to {packet_limit} packets "
+        f"on interface {interface}..."
+    )
+
+    try:
+        for packet in capture.packets():
+            packets.append(packet)
+
+            if len(packets) >= packet_limit:
+                break
+    finally:
+        # Ensure capture resources are released even if collection fails.
+        capture.stop()
+
+    if not packets:
+        print(
+            "No packets captured. Check the interface "
+            "and capture permissions."
+        )
+        return
+
+    # Collect numeric packet fields for diagnostics only.
+    observed = {}
+
+    for packet in packets:
+        for name, value in packet.items():
+            if valid_number(value):
+                observed.setdefault(name, value)
+
+    # Compute derived features from the captured packet batch.
+    aggregate = aggregate_schema_features(packets)
+    engineered = WindowFeatureEngineer().extract(packets)
+
+    # Diagnostic combination only; this is NOT a valid ML input vector.
+    diagnostic_values = dict(observed)
+    diagnostic_values.update(aggregate)
+    diagnostic_values.update(engineered)
+
+    analyzer = FeatureAvailabilityAnalyzer()
+    multiclass = analyzer.multiclass_report(diagnostic_values)
+
+    print(f"\nPackets captured: {len(packets)}")
+    print(
+        f"Multiclass: {multiclass['available']}/"
+        f"{multiclass['expected']} numeric features found"
+    )
+
+    print("\nModel features unavailable:")
+    for name in multiclass["unavailable_features"]:
+        print(f"  - {name}")
+
+    print(
+        "\nIMPORTANT: This is an availability audit, not a prediction. "
+        "Finding a numeric value does not prove that its training-time "
+        "aggregation semantics are satisfied."
+    )
+
+
+if __name__ == "__main__":
+    main()
