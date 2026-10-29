@@ -17,6 +17,7 @@ RISK_THRESHOLDS = {
 
 TRUST_SAFE_THRESHOLD = 70.0
 
+
 ENCRYPTION_RISK = {
     "WPA3": 0.0,
     "WPA2": 15.0,
@@ -24,6 +25,7 @@ ENCRYPTION_RISK = {
     "WEP": 90.0,
     "OPEN": 100.0,
 }
+
 
 BEHAVIOR_GROUPS = {
     "management": [

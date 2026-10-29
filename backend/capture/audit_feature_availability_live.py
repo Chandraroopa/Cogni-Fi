@@ -1,14 +1,29 @@
-
+﻿import math
 from numbers import Real
-import math
 
 from backend.capture.adapter import TSharkCapture
 from backend.capture.feature_availability import FeatureAvailabilityAnalyzer
-from backend.capture.schema_aggregator import aggregate_schema_features
-from backend.capture.feature_engineering import WindowFeatureEngineer
+from backend.capture.feature_window import (
+    CausalWindowManager,
+    FeatureExtractor,
+    FEATURE_NAMES,
+)
+
+INTERFACE = "5"
+PACKET_LIMIT = 100
+WINDOW_SIZE = 1.0
+
+WIFI_FLAGS = (
+    "wifi_retry_available",
+    "wifi_protected_available",
+    "wifi_management_frames_available",
+    "wifi_signal_available",
+    "wifi_data_rate_available",
+    "wifi_bssid_available",
+)
 
 
-def valid_number(value):
+def is_valid_number(value):
     return (
         isinstance(value, Real)
         and not isinstance(value, bool)
@@ -17,61 +32,97 @@ def valid_number(value):
 
 
 def main():
-    interface = "5"
-    packet_limit = 100
+    capture = TSharkCapture(interface=INTERFACE)
+    window_manager = CausalWindowManager(window_size=WINDOW_SIZE)
+    extractor = FeatureExtractor(window_size=WINDOW_SIZE)
+    analyzer = FeatureAvailabilityAnalyzer()
 
-    capture = TSharkCapture(interface=interface)
-    packets = []
+    packet_count = 0
+    windows = []
 
-    print(f"Capturing up to {packet_limit} packets on interface {interface}...")
+    print(f"Capturing up to {PACKET_LIMIT} packets on interface {INTERFACE}...")
 
-    for packet in capture.packets():
-        packets.append(packet)
-        if len(packets) >= packet_limit:
-            break
+    try:
+        for packet in capture.packets():
+            packet_count += 1
+            windows.extend(window_manager.add_packet(packet))
 
-    if not packets:
+            if packet_count >= PACKET_LIMIT:
+                break
+    except KeyboardInterrupt:
+        print("\nCapture interrupted.")
+    finally:
+        try:
+            capture.stop()
+        finally:
+            windows.extend(window_manager.flush())
+
+    if packet_count == 0:
         print("No packets captured. Check the interface and capture permissions.")
         return
 
-    # Availability across captured packets, for diagnostics only.
-    observed = {}
-    for packet in packets:
-        for name, value in packet.items():
-            if valid_number(value):
-                observed.setdefault(name, value)
+    if not windows:
+        print("Packets were captured, but no feature windows were produced.")
+        return
 
-    # Derived features are computed from the captured batch.
-    aggregate = aggregate_schema_features(packets)
-    engineered = WindowFeatureEngineer().extract(packets)
+    print(f"\nPackets captured: {packet_count}")
+    print(f"Feature windows audited: {len(windows)}")
 
-    # Combine only for availability diagnostics.
-    # This is NOT a valid ML input vector.
-    diagnostic_values = dict(observed)
-    diagnostic_values.update(aggregate)
-    diagnostic_values.update(engineered)
+    all_windows_pass = True
 
-    analyzer = FeatureAvailabilityAnalyzer()
+    for window in windows:
+        packets = window["packets"]
+        if not packets:
+            continue
 
-    binary = analyzer.binary_report(diagnostic_values)
-    multiclass = analyzer.multiclass_report(diagnostic_values)
+        features = extractor.extract_window_features(
+            packets,
+            duration=WINDOW_SIZE,
+        )
 
-    print(f"\nPackets captured: {len(packets)}")
-    print(f"Binary: {binary['available']}/{binary['expected']} numeric features found")
-    print(f"Multiclass: {multiclass['available']}/{multiclass['expected']} numeric features found")
+        report = analyzer.multiclass_report(features)
+        unavailable = report["unavailable_features"]
 
-    print("\nBinary features unavailable:")
-    for name in binary["unavailable_features"]:
-        print(f"  - {name}")
+        print(
+            f"\nWindow {window['window_id']}: "
+            f"{len(packets)} packets"
+        )
+        print(
+            f"Canonical model features: "
+            f"{report['available']}/{report['expected']}"
+        )
 
-    print("\nMulticlass features unavailable:")
-    for name in multiclass["unavailable_features"]:
-        print(f"  - {name}")
+        if unavailable:
+            all_windows_pass = False
+            print("Unavailable model features:")
+            for name in unavailable:
+                print(f"  - {name}")
+
+        vector_values = [features.get(name) for name in FEATURE_NAMES]
+        valid_vector = (
+            len(FEATURE_NAMES) == 30
+            and len(set(FEATURE_NAMES)) == 30
+            and len(vector_values) == 30
+            and all(is_valid_number(value) for value in vector_values)
+        )
+
+        print(f"30 numeric model inputs present: {valid_vector}")
+        if not valid_vector:
+            all_windows_pass = False
+
+        print("Wi-Fi diagnostic flags:")
+        for name in WIFI_FLAGS:
+            print(f"  {name}: {features.get(name, False)}")
+
+    print("\nFINAL RESULT")
+    if all_windows_pass:
+        print("PASS: All audited windows contain 30 numeric canonical features.")
+    else:
+        print("CHECK REQUIRED: One or more windows failed canonical feature validation.")
 
     print(
-        "\nIMPORTANT: This is an availability audit, not a prediction. "
-        "A numeric value found somewhere in the capture does not prove "
-        "that its training-time aggregation semantics are satisfied."
+        "Wi-Fi flags are diagnostics only; they are not model inputs. "
+        "Numeric availability does not prove training-time semantic compatibility."
     )
 
 

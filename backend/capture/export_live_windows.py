@@ -17,7 +17,7 @@ from backend.capture.feature_window import (
 )
 
 INTERFACE = "5"
-CAPTURE_SECONDS = 60
+CAPTURE_SECONDS = 300
 WINDOW_SECONDS = 1.0
 
 

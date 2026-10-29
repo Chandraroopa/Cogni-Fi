@@ -1,7 +1,14 @@
+
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+
+import { AuthProvider } from './context/AuthContext';
+
 import ProtectedRoute from './components/common/ProtectedRoute';
 import CursorGlow from './components/common/CursorGlow';
+import Navbar from './components/common/Navbar';
+import Footer from './components/common/Footer';
+
 import Home from './components/pages/Home';
 import Login from './components/pages/Login';
 import SignUp from './components/pages/SignUp';
@@ -11,11 +18,7 @@ import NetworkAnalysis from './components/pages/NetworkAnalysis';
 import History from './components/pages/History';
 import Alerts from './components/pages/Alerts';
 
-import { AuthProvider } from './context/AuthContext';
-
 import './App.css';
-import Navbar from './components/common/Navbar';
-import Footer from './components/common/Footer';
 
 function App() {
   return (
@@ -25,21 +28,26 @@ function App() {
           <CursorGlow />
 
           <Routes>
+            {/* Public routes */}
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
 
+            {/* Protected dashboard */}
             <Route
               path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <Navbar />
-                  <Dashboard />
-                  <Footer />
+                  <>
+                    <Navbar />
+                    <Dashboard />
+                    <Footer />
+                  </>
                 </ProtectedRoute>
               }
             />
 
+            {/* Protected Wi-Fi scan */}
             <Route
               path="/wifi-scan"
               element={
@@ -49,6 +57,7 @@ function App() {
               }
             />
 
+            {/* Protected network analysis */}
             <Route
               path="/network-analysis"
               element={
@@ -58,29 +67,34 @@ function App() {
               }
             />
 
+            {/* Protected history */}
             <Route
-  path="/history"
-  element={
-    <ProtectedRoute>
-      <Navbar />
-      <History />
-      <Footer />
-    </ProtectedRoute>
-  }
-/>
+              path="/history"
+              element={
+                <ProtectedRoute>
+                  <>
+                    <Navbar />
+                    <History />
+                    <Footer />
+                  </>
+                </ProtectedRoute>
+              }
+            />
 
-<Route
-  path="/alerts"
-  element={
-    <ProtectedRoute>
-      <Navbar />
-      <Alerts />
-      <Footer />
-    </ProtectedRoute>
-  }
-/>
+            {/* Protected alerts */}
+            <Route
+              path="/alerts"
+              element={
+                <ProtectedRoute>
+                  <>
+                    <Navbar />
+                    <Alerts />
+                    <Footer />
+                  </>
+                </ProtectedRoute>
+              }
+            />
           </Routes>
-
         </div>
       </Router>
     </AuthProvider>

@@ -93,19 +93,18 @@ console.log('Factors:', packet.risk?.factors);
 }, []);
 
   
+
 const handleAnalyze = () => {
   if (!selectedNetwork) return;
-
-  // No verified ML analysis endpoint is available yet.
-  // Pass only the selected network to the analysis page.
-  setAnalysisResult(null);
 
   navigate('/network-analysis', {
     state: {
       network: selectedNetwork,
+      analysisResult,
     },
   });
 };
+
 
 
   const getSignalLabel = (signal) => {

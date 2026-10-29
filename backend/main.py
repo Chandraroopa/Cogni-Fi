@@ -1,6 +1,7 @@
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 import asyncio
 import os
@@ -16,6 +17,7 @@ from backend.capture.feature_window import (
 )
 from backend.ml_service import ml_service
 from backend.risk_engine import RiskEngine
+
 
 app = FastAPI(title="Cognifi Wi-Fi Security Backend")
 
@@ -36,9 +38,8 @@ def health():
     }
 
 
-def collect_packets(interface, packet_queue, stop_event, loop):
-    """Capture packets on a background thread and enqueue them safely."""
-    capture = TSharkCapture(interface=interface)
+def collect_packets(interface, packet_queue, stop_event, loop, capture):
+    """Read packets in a background thread and enqueue them safely."""
 
     def enqueue_packet(packet):
         if stop_event.is_set():
@@ -59,7 +60,7 @@ def collect_packets(interface, packet_queue, stop_event, loop):
             try:
                 loop.call_soon_threadsafe(enqueue_packet, packet)
             except RuntimeError:
-                # Event loop has already closed.
+                # The event loop has already closed.
                 break
 
     except Exception as exc:
@@ -67,10 +68,19 @@ def collect_packets(interface, packet_queue, stop_event, loop):
             print(f"[TShark] Capture error: {exc}")
 
     finally:
+        stop_event.set()
+
+        try:
+            capture.stop()
+        except Exception as exc:
+            print(f"[TShark] Capture stop error: {exc}")
+
         print("[TShark] Capture worker stopped.")
 
-    
+
 def get_windows_wifi_signal():
+    """Read the Windows Wi-Fi signal percentage and optional RSSI."""
+
     if os.name != "nt":
         return {
             "available": False,
@@ -147,6 +157,26 @@ async def websocket_endpoint(websocket: WebSocket):
 
     packet_queue = asyncio.Queue(maxsize=2000)
     stop_event = threading.Event()
+    capture = TSharkCapture(interface=interface)
+
+    def websocket_is_connected():
+        return (
+            websocket.client_state == WebSocketState.CONNECTED
+            and websocket.application_state == WebSocketState.CONNECTED
+        )
+
+    async def send_json_if_connected(payload):
+        """Send a message only while the WebSocket is connected."""
+
+        if not websocket_is_connected():
+            return False
+
+        try:
+            await websocket.send_json(payload)
+            return True
+        except (WebSocketDisconnect, RuntimeError, OSError) as exc:
+            print(f"[WS] Message not sent; connection is closing: {exc}")
+            return False
 
     capture_task = asyncio.create_task(
         asyncio.to_thread(
@@ -155,35 +185,55 @@ async def websocket_endpoint(websocket: WebSocket):
             packet_queue,
             stop_event,
             loop,
+            capture,
         )
     )
 
     last_status_time = loop.time()
 
-
     async def process_windows(windows):
-        """Extract features and send risk updates for completed windows."""
+        """Extract features, run inference, and send risk updates."""
+
         for window in windows:
+            if not websocket_is_connected():
+                return
+
             window_packets = window["packets"]
 
             if not window_packets:
                 continue
 
+            # Extract the model features and diagnostic availability flags.
             features = extractor.extract_window_features(
                 window_packets,
                 duration=1.0,
             )
 
+            # Run the existing ML inference pipeline.
             ml_result = ml_service.analyze(features)
 
+            # Only treat a signal as available when the extractor explicitly
+            # confirms that it was observed in this capture window.
+            behavioral_availability = {
+                "wifi_retry_available": (
+                    features.get("wifi_retry_available") is True
+                ),
+                "wifi_management_frames_available": (
+                    features.get("wifi_management_frames_available") is True
+                ),
+            }
+
+            # Behavioral scoring uses the supplied features and availability.
+            # No baseline or encryption information is fabricated here.
             risk = risk_engine.analyze(
                 mode="live",
                 ml_result=ml_result,
-                behavioral_features=None,
+                behavioral_features=features,
                 security=None,
+                behavioral_availability=behavioral_availability,
             )
 
-            await websocket.send_json({
+            sent = await send_json_if_connected({
                 "type": "risk_update",
                 "features": features,
                 "ml": ml_result,
@@ -199,10 +249,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 f"{ml_result.get('predicted_class', 'Unknown')}"
             )
 
+            if not sent:
+                return
+
     try:
         print(f"[TShark] Starting capture on interface {interface}...")
 
-        while True:
+        while websocket_is_connected():
             try:
                 packet = await asyncio.wait_for(
                     packet_queue.get(),
@@ -213,24 +266,30 @@ async def websocket_endpoint(websocket: WebSocket):
                 now = loop.time()
 
                 if now - last_status_time >= 5.0:
-                    await websocket.send_json({
+                    sent = await send_json_if_connected({
                         "type": "status",
                         "message": "Waiting for live packets...",
                         "interface": interface,
                     })
                     last_status_time = now
 
-                if capture_task.done():
-                    worker_error = capture_task.exception()
+                    if not sent:
+                        break
 
-                    if worker_error is not None:
-                        raise RuntimeError(
-                            f"Capture worker failed: {worker_error}"
-                        )
+                if capture_task.done():
+                    if capture_task.cancelled():
+                        print("[TShark] Capture task was cancelled.")
+                    else:
+                        worker_error = capture_task.exception()
+
+                        if worker_error is not None:
+                            print(
+                                f"[TShark] Worker task error: {worker_error}"
+                            )
 
                     print("[TShark] Capture worker exited.")
 
-                    await websocket.send_json({
+                    await send_json_if_connected({
                         "type": "error",
                         "error": (
                             "The packet capture worker stopped. "
@@ -240,6 +299,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     break
 
                 continue
+
+            if not websocket_is_connected():
+                break
 
             print(
                 f"[PACKET] "
@@ -254,37 +316,47 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("[WS] Client disconnected.")
 
+    except asyncio.CancelledError:
+        print("[WS] Handler cancelled.")
+        raise
+
     except Exception as exc:
         print(f"[WS] Error: {exc}")
 
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "error": str(exc),
-            })
-        except Exception:
-            pass
+        await send_json_if_connected({
+            "type": "error",
+            "error": str(exc),
+        })
 
     finally:
+        print("[WS] Starting connection cleanup.")
+
         stop_event.set()
 
-        # Flush the final partial window without inventing packets.
         try:
-            await process_windows(window_manager.flush())
+            capture.stop()
         except Exception as exc:
-            print(f"[WS] Final window processing error: {exc}")
+            print(f"[TShark] Stop request error: {exc}")
 
-        # Allow the capture worker time to finish.
+        # Flush completed windows only while the client can still receive them.
+        if websocket_is_connected():
+            try:
+                await process_windows(window_manager.flush())
+            except Exception as exc:
+                print(f"[WS] Final window processing error: {exc}")
+
         try:
             await asyncio.wait_for(
                 asyncio.shield(capture_task),
-                timeout=2.0,
+                timeout=5.0,
             )
         except asyncio.TimeoutError:
             print(
-                "[TShark] Worker is still stopping. "
-                "The capture iterator may be blocked waiting for packets."
+                "[TShark] Worker did not exit within five seconds. "
+                "Check subprocess cleanup in TSharkCapture."
             )
+        except asyncio.CancelledError:
+            print("[TShark] Capture task was cancelled.")
         except Exception as exc:
             print(f"[TShark] Worker shutdown error: {exc}")
 
