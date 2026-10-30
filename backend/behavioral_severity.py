@@ -1,9 +1,5 @@
+
 import math
-BEHAVIOR_WIFI_FLAGS = {
-    "retry_rate": "wifi_retry_available",
-    "deauth_rate": "wifi_management_frames_available",
-    "disassoc_rate": "wifi_management_frames_available",
-}
 
 try:
     from .risk_config import BEHAVIOR_GROUPS
@@ -11,22 +7,36 @@ except ImportError:
     from risk_config import BEHAVIOR_GROUPS
 
 
-# These flags come from Person 2's capture metadata.
-WIFI_AVAILABILITY_FLAGS = {
+# Wi-Fi capture availability metadata.
+BEHAVIOR_WIFI_FLAGS = {
     "retry_rate": "wifi_retry_available",
     "deauth_rate": "wifi_management_frames_available",
     "disassoc_rate": "wifi_management_frames_available",
 }
 
+WIFI_AVAILABILITY_FLAGS = BEHAVIOR_WIFI_FLAGS.copy()
+
+
+# Explicit network measurement availability metadata.
+NETWORK_AVAILABILITY_FLAGS = {
+    "rst_rate": "tcp_rst_available",
+    "retransmission_rate": "tcp_retransmission_available",
+    "dns_latency_mean": "dns_latency_available",
+}
+
 
 class BehavioralSeverityEngine:
-
     def __init__(self, baseline=None):
         self.baseline = baseline or {}
 
     @staticmethod
     def upper_tail_severity(value, p95, p99):
-        if any(isinstance(v, bool) for v in (value, p95, p99)):
+        """Calculate severity using validated p95 and p99 thresholds."""
+
+        if any(
+            isinstance(v, bool)
+            for v in (value, p95, p99)
+        ):
             return None
 
         try:
@@ -36,7 +46,10 @@ class BehavioralSeverityEngine:
         except (TypeError, ValueError, OverflowError):
             return None
 
-        if not all(math.isfinite(v) for v in (value, p95, p99)):
+        if not all(
+            math.isfinite(v)
+            for v in (value, p95, p99)
+        ):
             return None
 
         if value < 0 or p95 < 0 or p99 < p95:
@@ -57,12 +70,17 @@ class BehavioralSeverityEngine:
         )
 
     def score_feature(self, feature_name, value):
+        """Score a feature only when valid baseline thresholds exist."""
+
         thresholds = self.baseline.get(feature_name)
 
         if not isinstance(thresholds, dict):
             return None
 
-        if "p95" not in thresholds or "p99" not in thresholds:
+        if (
+            "p95" not in thresholds
+            or "p99" not in thresholds
+        ):
             return None
 
         return self.upper_tail_severity(
@@ -73,6 +91,13 @@ class BehavioralSeverityEngine:
 
     @staticmethod
     def is_available(feature_name, availability):
+        """
+        Check explicit per-feature availability first.
+
+        If no explicit feature entry exists, use the corresponding
+        Wi-Fi or network metadata flag.
+        """
+
         if not isinstance(availability, dict):
             return False
 
@@ -80,77 +105,96 @@ class BehavioralSeverityEngine:
         if feature_name in availability:
             return availability[feature_name] is True
 
-        # Allow Person 2's actual Wi-Fi availability flags.
-        flag = WIFI_AVAILABILITY_FLAGS.get(feature_name)
+        # Wi-Fi metadata fallback.
+        wifi_flag = WIFI_AVAILABILITY_FLAGS.get(feature_name)
 
-        if flag is not None:
-            return availability.get(flag) is True
+        if wifi_flag is not None:
+            return availability.get(wifi_flag) is True
+
+        # Network metadata fallback.
+        network_flag = NETWORK_AVAILABILITY_FLAGS.get(
+            feature_name
+        )
+
+        if network_flag is not None:
+            return availability.get(network_flag) is True
 
         return False
 
     def analyze(self, features, availability=None):
-        features = features if isinstance(features, dict) else {}
+        """Calculate feature and group severity from available evidence."""
+
+        features = (
+            features
+            if isinstance(features, dict)
+            else {}
+        )
+
         availability = (
-            availability if isinstance(availability, dict) else {}
+            availability
+            if isinstance(availability, dict)
+            else {}
         )
 
         feature_severity = {}
         group_scores = {}
+
         missing_features = []
         unavailable_features = []
         unscored_features = []
 
         for group_name, group_features in BEHAVIOR_GROUPS.items():
+
             scored_values = []
 
             for feature_name in group_features:
+
                 value = features.get(feature_name)
 
-                # Explicit per-feature availability overrides diagnostic flags.
-                # Missing or unknown availability is never treated as True.
-                verified = (
-                    isinstance(availability, dict)
-                    and availability.get(feature_name) is True
+                # Check metadata and explicit feature availability.
+                verified = self.is_available(
+                    feature_name,
+                    availability,
                 )
 
-                # Allow the existing Wi-Fi capture flags to establish availability
-                # for the three management indicators.
-                wifi_flag = BEHAVIOR_WIFI_FLAGS.get(feature_name)
-
-                if wifi_flag is not None and isinstance(availability, dict):
-                    if feature_name not in availability:
-                        verified = availability.get(wifi_flag) is True
-
                 if not verified:
+
                     feature_severity[feature_name] = None
                     unavailable_features.append(feature_name)
+
                     continue
 
                 if value is None:
+
                     feature_severity[feature_name] = None
                     missing_features.append(feature_name)
+
                     continue
 
-                if not self.is_available(feature_name, availability):
-                    feature_severity[feature_name] = None
-                    unavailable_features.append(feature_name)
-                    continue
+                # Apply validated baseline thresholds.
+                severity = self.score_feature(
+                    feature_name,
+                    value,
+                )
 
-                severity = self.score_feature(feature_name, value)
                 feature_severity[feature_name] = severity
 
                 if severity is None:
+
                     unscored_features.append(feature_name)
+
                     continue
 
                 scored_values.append(severity)
 
+            # Preserve the existing maximum-severity group calculation.
             group_scores[group_name] = (
                 round(max(scored_values), 2)
                 if scored_values
                 else None
             )
 
+        # Calculate behavioral risk from available groups.
         valid_group_scores = [
             score
             for score in group_scores.values()
@@ -158,7 +202,11 @@ class BehavioralSeverityEngine:
         ]
 
         behavioral_risk = (
-            round(sum(valid_group_scores) / len(valid_group_scores), 2)
+            round(
+                sum(valid_group_scores)
+                / len(valid_group_scores),
+                2,
+            )
             if valid_group_scores
             else None
         )

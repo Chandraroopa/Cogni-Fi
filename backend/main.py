@@ -60,7 +60,6 @@ def collect_packets(interface, packet_queue, stop_event, loop, capture):
             try:
                 loop.call_soon_threadsafe(enqueue_packet, packet)
             except RuntimeError:
-                # The event loop has already closed.
                 break
 
     except Exception as exc:
@@ -79,7 +78,7 @@ def collect_packets(interface, packet_queue, stop_event, loop, capture):
 
 
 def get_windows_wifi_signal():
-    """Read the Windows Wi-Fi signal percentage and optional RSSI."""
+    """Read Windows Wi-Fi signal percentage and optional RSSI."""
 
     if os.name != "nt":
         return {
@@ -105,6 +104,7 @@ def get_windows_wifi_signal():
             output,
             re.MULTILINE | re.IGNORECASE,
         )
+
         rssi_match = re.search(
             r"^\s*Rssi\s*:\s*(-?\d+)",
             output,
@@ -138,9 +138,90 @@ def get_windows_wifi_signal():
         }
 
 
+def get_windows_wifi_security():
+    """
+    Read the authentication type of the connected Windows Wi-Fi interface.
+
+    Returns None when authentication information is unavailable.
+    """
+
+    if os.name != "nt":
+        return None
+
+    try:
+        result = subprocess.run(
+            ["netsh", "wlan", "show", "interfaces"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        output = result.stdout
+
+        interface_sections = re.split(
+            r"(?=^\s*Name\s*:)",
+            output,
+            flags=re.MULTILINE | re.IGNORECASE,
+        )
+
+        for section in interface_sections:
+            state_match = re.search(
+                r"^\s*State\s*:\s*(.+?)\s*$",
+                section,
+                re.MULTILINE | re.IGNORECASE,
+            )
+
+            if not state_match:
+                continue
+
+            if state_match.group(1).strip().lower() != "connected":
+                continue
+
+            authentication_match = re.search(
+                r"^\s*Authentication\s*:\s*(.+?)\s*$",
+                section,
+                re.MULTILINE | re.IGNORECASE,
+            )
+
+            if authentication_match:
+                authentication = authentication_match.group(1).strip()
+
+                print(
+                    "[Wi-Fi Security] Connected authentication: "
+                    f"{authentication}"
+                )
+
+                return authentication
+
+        print(
+            "[Wi-Fi Security] No connected interface authentication found."
+        )
+        return None
+
+    except (subprocess.SubprocessError, OSError) as exc:
+        print(f"[Wi-Fi Security] Could not read authentication: {exc}")
+        return None
+
+
 @app.get("/wifi-signal")
 def wifi_signal():
     return get_windows_wifi_signal()
+
+
+@app.get("/wifi-security")
+def wifi_security():
+    """Return connected Windows Wi-Fi authentication information."""
+
+    authentication = get_windows_wifi_security()
+
+    return {
+        "available": authentication is not None,
+        "authentication": authentication,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.websocket("/ws")
@@ -155,6 +236,18 @@ async def websocket_endpoint(websocket: WebSocket):
     window_manager = CausalWindowManager(window_size=1.0)
     risk_engine = RiskEngine()
 
+    wifi_security = get_windows_wifi_security()
+
+    if wifi_security:
+        print(
+            f"[Wi-Fi Security] Risk assessment context: {wifi_security}"
+        )
+    else:
+        print(
+            "[Wi-Fi Security] Authentication unavailable; "
+            "static risk evidence will remain unavailable."
+        )
+
     packet_queue = asyncio.Queue(maxsize=2000)
     stop_event = threading.Event()
     capture = TSharkCapture(interface=interface)
@@ -166,14 +259,13 @@ async def websocket_endpoint(websocket: WebSocket):
         )
 
     async def send_json_if_connected(payload):
-        """Send a message only while the WebSocket is connected."""
-
         if not websocket_is_connected():
             return False
 
         try:
             await websocket.send_json(payload)
             return True
+
         except (WebSocketDisconnect, RuntimeError, OSError) as exc:
             print(f"[WS] Message not sent; connection is closing: {exc}")
             return False
@@ -203,17 +295,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if not window_packets:
                 continue
 
-            # Extract the model features and diagnostic availability flags.
             features = extractor.extract_window_features(
                 window_packets,
                 duration=1.0,
             )
 
-            # Run the existing ML inference pipeline.
+            # The ML service receives the original frozen 30 features.
             ml_result = ml_service.analyze(features)
 
-            # Only treat a signal as available when the extractor explicitly
-            # confirms that it was observed in this capture window.
+            # Availability metadata is separate from the model vector.
+            # A value is considered available only when the extractor
+            # explicitly marks its measurement as available.
             behavioral_availability = {
                 "wifi_retry_available": (
                     features.get("wifi_retry_available") is True
@@ -221,15 +313,22 @@ async def websocket_endpoint(websocket: WebSocket):
                 "wifi_management_frames_available": (
                     features.get("wifi_management_frames_available") is True
                 ),
+                "rst_rate": (
+                    features.get("tcp_rst_available") is True
+                ),
+                "retransmission_rate": (
+                    features.get("tcp_retransmission_available") is True
+                ),
+                "dns_latency_mean": (
+                    features.get("dns_latency_available") is True
+                ),
             }
 
-            # Behavioral scoring uses the supplied features and availability.
-            # No baseline or encryption information is fabricated here.
             risk = risk_engine.analyze(
                 mode="live",
                 ml_result=ml_result,
                 behavioral_features=features,
-                security=None,
+                security=wifi_security,
                 behavioral_availability=behavioral_availability,
             )
 
@@ -244,7 +343,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 f"[RISK] Window {window.get('window_id', '?')} "
                 f"| Packets: {len(window_packets)} "
                 f"| Status: {risk.get('status', 'Unknown')} "
+                f"| Assessment: {risk.get('assessment', 'Unknown')} "
                 f"| Score: {risk.get('risk_score', 'N/A')} "
+                f"| Factors: {risk.get('factors', {})} "
                 f"| Predicted class: "
                 f"{ml_result.get('predicted_class', 'Unknown')}"
             )
@@ -271,6 +372,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "message": "Waiting for live packets...",
                         "interface": interface,
                     })
+
                     last_status_time = now
 
                     if not sent:
@@ -296,6 +398,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             "Check the backend terminal for capture errors."
                         ),
                     })
+
                     break
 
                 continue
@@ -338,7 +441,6 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as exc:
             print(f"[TShark] Stop request error: {exc}")
 
-        # Flush completed windows only while the client can still receive them.
         if websocket_is_connected():
             try:
                 await process_windows(window_manager.flush())
@@ -350,13 +452,16 @@ async def websocket_endpoint(websocket: WebSocket):
                 asyncio.shield(capture_task),
                 timeout=5.0,
             )
+
         except asyncio.TimeoutError:
             print(
                 "[TShark] Worker did not exit within five seconds. "
                 "Check subprocess cleanup in TSharkCapture."
             )
+
         except asyncio.CancelledError:
             print("[TShark] Capture task was cancelled.")
+
         except Exception as exc:
             print(f"[TShark] Worker shutdown error: {exc}")
 

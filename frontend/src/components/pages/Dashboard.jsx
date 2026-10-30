@@ -1,3 +1,4 @@
+
 import api from '../../services/api';
 import React, { useState, useEffect } from 'react';
 import {
@@ -8,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 function Dashboard() {
-  const { user, logout } = useAuth();  
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -18,28 +19,116 @@ function Dashboard() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [streamStatus, setStreamStatus] = useState('connecting');
 
-  // ============================================================
-  // FETCH FROM FLASK API
-  // ============================================================
+  const riskData = analysisResult?.risk ?? {};
+  const riskScore =
+    typeof riskData.risk_score === 'number'
+      ? riskData.risk_score.toFixed(1)
+      : '--';
+
+  // This score belongs to the connected Wi-Fi context used by the backend.
+  // It is not a score calculated for the selected scanned network.
+  const trustScore =
+    typeof riskData.trust_score === 'number'
+      ? riskData.trust_score.toFixed(1)
+      : '--';
+
+  const getNetworkKey = (network) =>
+    network?.ssid || network?.name || network?.network_name || null;
+
+  const getSignalPercentage = (network) => {
+    const percentage = Number(
+      network?.signalPercentage ?? network?.signal_percentage
+    );
+
+    if (
+      network?.signalPercentage != null &&
+      network.signalPercentage !== '' &&
+      Number.isFinite(percentage) &&
+      percentage >= 0 &&
+      percentage <= 100
+    ) {
+      return percentage;
+    }
+
+    if (
+      network?.signal_percentage != null &&
+      network.signal_percentage !== '' &&
+      Number.isFinite(percentage) &&
+      percentage >= 0 &&
+      percentage <= 100
+    ) {
+      return percentage;
+    }
+
+    const signalDbm = Number(network?.signal);
+
+    if (
+      network?.signal != null &&
+      network.signal !== '' &&
+      Number.isFinite(signalDbm) &&
+      signalDbm >= -100 &&
+      signalDbm < 0
+    ) {
+      return Math.round(
+        Math.max(0, Math.min(100, 2 * (signalDbm + 100)))
+      );
+    }
+
+    return null;
+  };
+
+  const getSignalLabel = (signal) => {
+    if (signal == null || !Number.isFinite(Number(signal))) {
+      return 'Unknown';
+    }
+    if (signal >= 80) return 'Excellent';
+    if (signal >= 60) return 'Good';
+    if (signal >= 40) return 'Fair';
+    return 'Weak';
+  };
+
+  const getSignalTextColor = (signal) => {
+    if (signal == null) return 'text-slate-500';
+    if (signal >= 60) return 'text-cyan-400';
+    if (signal >= 40) return 'text-yellow-400';
+    return 'text-pink-400';
+  };
+
+  const getSignalBarColor = (signal) => {
+    if (signal == null) return 'bg-slate-800';
+    if (signal >= 60) return 'bg-cyan-400';
+    if (signal >= 40) return 'bg-yellow-400';
+    return 'bg-pink-500';
+  };
 
   const handleScan = async () => {
     setScanning(true);
     setSelectedNetwork(null);
-    setAnalysisResult(null);
 
     try {
       const response = await api.get('/scan');
-const data = response.data;
-      
-      setNetworks(
-  (data.networks || []).map((network) => ({
-    ...network,
-    signalPercentage:
-      network.signalPercentage ?? network.signal_percentage ?? null,
-  }))
-);
+      const data = response?.data ?? {};
+
+      const scannedNetworks = (data.networks || []).map((network) => ({
+        ...network,
+        signalPercentage: getSignalPercentage(network),
+      }));
+
+      setNetworks(scannedNetworks);
+
       if (data.currentConnection) {
-        setSelectedNetwork(data.currentConnection);
+        const currentKey = getNetworkKey(data.currentConnection);
+
+        const matchingNetwork = scannedNetworks.find(
+          (network) => getNetworkKey(network) === currentKey
+        );
+
+        setSelectedNetwork(
+          matchingNetwork || {
+            ...data.currentConnection,
+            signalPercentage: getSignalPercentage(data.currentConnection),
+          }
+        );
       }
     } catch (error) {
       console.error('Failed to connect to Flask backend:', error);
@@ -49,83 +138,45 @@ const data = response.data;
   };
 
   const handleSelectNetwork = (network) => {
-  const getNetworkKey = (item) =>
-    item.ssid || item.name || item.network_name;
-
-  setSelectedNetwork((current) => {
-    if (
-      current &&
-      getNetworkKey(current) === getNetworkKey(network)
-    ) {
-      return null; // Click again to deselect
-    }
-
-    return network; // Select only this network
-  });
-
-  setAnalysisResult(null);
-};
-
-useEffect(() => {
-  const handlePacket = (packet) => {
-    if (packet?.type === 'risk_update') {
-      if (packet.risk && typeof packet.risk === 'object') {
-        console.log('Risk score:', packet.risk?.risk_score);
-console.log('Trust score:', packet.risk?.trust_score);
-console.log('Assessment:', packet.risk?.assessment);
-console.log('Status:', packet.risk?.status);
-console.log('Factors:', packet.risk?.factors);
-        setAnalysisResult(packet);
+    setSelectedNetwork((current) => {
+      if (getNetworkKey(current) === getNetworkKey(network)) {
+        return null;
       }
-    } else if (packet?.type === 'status') {
-      setStreamStatus('connected');
-    } else if (packet?.type === 'error') {
-      setStreamStatus('error');
-      console.error('Packet stream error:', packet.error);
-    }
+      return network;
+    });
   };
 
-  connectToPacketStream(handlePacket, setStreamStatus);
+  useEffect(() => {
+    const handlePacket = (packet) => {
+      if (packet?.type === 'risk_update') {
+        if (packet.risk && typeof packet.risk === 'object') {
+          setAnalysisResult(packet);
+        }
+      } else if (packet?.type === 'status') {
+        setStreamStatus('connected');
+      } else if (packet?.type === 'error') {
+        setStreamStatus('error');
+        console.error('Packet stream error:', packet.error);
+      }
+    };
 
-  return () => {
-    disconnectFromPacketStream();
-  };
-}, []);
+    connectToPacketStream(handlePacket, setStreamStatus);
 
-  
+    return () => {
+      disconnectFromPacketStream();
+    };
+  }, []);
 
-const handleAnalyze = () => {
-  if (!selectedNetwork) return;
+  const handleAnalyze = () => {
+    if (!selectedNetwork) return;
 
-  navigate('/network-analysis', {
-    state: {
-      network: selectedNetwork,
-      analysisResult,
-    },
-  });
-};
-
-
-
-  const getSignalLabel = (signal) => {
-    if (signal >= 80) return 'Excellent';
-    if (signal >= 60) return 'Good';
-    if (signal >= 40) return 'Fair';
-    return 'Weak';
-  };
-
-  const getSignalTextColor = (signal) => {
-    if (signal >= 80) return 'text-cyan-400';
-    if (signal >= 60) return 'text-cyan-400';
-    if (signal >= 40) return 'text-yellow-400';
-    return 'text-pink-400';
-  };
-
-  const getSignalBarColor = (signal) => {
-    if (signal >= 80) return 'bg-cyan-400';
-    if (signal >= 60) return 'bg-cyan-400';
-    if (signal >= 40) return 'bg-yellow-400';
-    return 'bg-pink-500';
+    navigate('/network-analysis', {
+      state: {
+        network: selectedNetwork,
+        analysisResult,
+        riskContext: 'connected_network',
+      },
+    });
   };
 
   const Icon = ({ type, size = 22 }) => {
@@ -142,25 +193,71 @@ const handleAnalyze = () => {
 
     switch (type) {
       case 'menu':
-        return <svg {...common}><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></svg>;
+        return (
+          <svg {...common}>
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+          </svg>
+        );
       case 'close':
-        return <svg {...common}><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>;
+        return (
+          <svg {...common}>
+            <line x1="6" y1="6" x2="18" y2="18" />
+            <line x1="18" y1="6" x2="6" y2="18" />
+          </svg>
+        );
       case 'wifi':
-        return <svg {...common}><path d="M5 12.55a11 11 0 0 1 14.08 0" /><path d="M1.42 9a16 16 0 0 1 21.16 0" /><path d="M8.53 16.11a6 6 0 0 1 6.95 0" /><line x1="12" y1="20" x2="12.01" y2="20" /></svg>;
+        return (
+          <svg {...common}>
+            <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+            <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+            <line x1="12" y1="20" x2="12.01" y2="20" />
+          </svg>
+        );
       case 'shield':
-        return <svg {...common}><path d="M12 3l7 4v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V7l7-4z" /><path d="m9 12 2 2 4-4" /></svg>;
+        return (
+          <svg {...common}>
+            <path d="M12 3l7 4v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V7l7-4z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+        );
       case 'alert':
-        return <svg {...common}><path d="M10.3 3.8 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>;
+        return (
+          <svg {...common}>
+            <path d="M10.3 3.8 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        );
       case 'activity':
-        return <svg {...common}><polyline points="3 12 7 12 10 5 14 19 17 12 21 12" /></svg>;
+        return (
+          <svg {...common}>
+            <polyline points="3 12 7 12 10 5 14 19 17 12 21 12" />
+          </svg>
+        );
       case 'history':
-        return <svg {...common}><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>;
-      case 'bell':
-        return <svg {...common}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></svg>;
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="9" />
+            <polyline points="12 7 12 12 15 14" />
+          </svg>
+        );
       case 'settings':
-        return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V22h-2.5v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5V13.5h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1L8 8.7l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V7h2.5v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V15h-.1a1.7 1.7 0 0 0-1.5 0Z" /></svg>;
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V22h-2.5v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5V13.5h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1L8 8.7l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V7h2.5v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V15h-.1a1.7 1.7 0 0 0-1.5 0Z" />
+          </svg>
+        );
       case 'user':
-        return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>;
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
+          </svg>
+        );
       default:
         return null;
     }
@@ -170,9 +267,13 @@ const handleAnalyze = () => {
     { label: 'Dashboard', icon: 'activity', active: true },
     { label: 'Wi-Fi Scan', icon: 'wifi' },
     { label: 'History', icon: 'history' },
-    //{ label: 'Alerts', icon: 'bell' },
     { label: 'Settings', icon: 'settings' },
   ];
+
+  const trustedNetworkCount = networks.filter((network) => {
+    const security = String(network.security || '').toLowerCase().trim();
+    return security !== '' && security !== 'open' && security !== 'unknown';
+  }).length;
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-[#020611] text-white">
@@ -199,15 +300,23 @@ const handleAnalyze = () => {
                 <span className="text-cyan-400">F</span>
                 <span className="text-purple-400">i</span>
               </div>
-              <p className="mt-0.5 text-[9px] uppercase tracking-[0.3em] text-slate-600">Know your network</p>
+              <p className="mt-0.5 text-[9px] uppercase tracking-[0.3em] text-slate-600">
+                Know your network
+              </p>
             </div>
-            <button type="button" onClick={() => setSidebarOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-cyan-400">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/5 hover:text-cyan-400"
+            >
               <Icon type="close" size={20} />
             </button>
           </div>
 
           <nav className="flex-1 px-4 py-6">
-            <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">Navigation</p>
+            <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+              Navigation
+            </p>
             <div className="space-y-2">
               {sidebarItems.map((item) => (
                 <button
@@ -218,23 +327,23 @@ const handleAnalyze = () => {
                     if (item.label === 'Dashboard') navigate('/dashboard');
                     if (item.label === 'Wi-Fi Scan') navigate('/wifi-scan');
                     if (item.label === 'History') navigate('/history');
-                    if (item.label === 'Alerts') navigate('/alerts');
                   }}
                   className={`group flex w-full items-center gap-4 rounded-xl px-4 py-3.5 text-left transition ${item.active ? 'border border-cyan-400/20 bg-cyan-400/10 text-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.06)]' : 'text-slate-400 hover:bg-white/[0.03] hover:text-white'}`}
                 >
-                  <span className={item.active ? 'text-cyan-400' : 'text-slate-500 group-hover:text-cyan-400'}><Icon type={item.icon} size={20} /></span>
+                  <span className={item.active ? 'text-cyan-400' : 'text-slate-500 group-hover:text-cyan-400'}>
+                    <Icon type={item.icon} size={20} />
+                  </span>
                   <span className="text-sm font-medium">{item.label}</span>
                 </button>
               ))}
             </div>
           </nav>
 
-                    <div className="border-t border-slate-800/70 p-4">
+          <div className="border-t border-slate-800/70 p-4">
             <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-slate-300">
                 <Icon type="user" size={20} />
               </div>
-
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-white">
                   {user?.user_metadata?.full_name ||
@@ -242,9 +351,7 @@ const handleAnalyze = () => {
                     user?.email?.split('@')[0] ||
                     'User'}
                 </p>
-                <p className="truncate text-xs text-slate-600">
-                  {user?.email || ''}
-                </p>
+                <p className="truncate text-xs text-slate-600">{user?.email || ''}</p>
               </div>
             </div>
 
@@ -267,50 +374,69 @@ const handleAnalyze = () => {
         </div>
       </aside>
 
-      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px]" />}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-[2px]"
+        />
+      )}
 
       <section className="relative z-10 min-h-screen px-5 py-6 sm:px-8 lg:px-10">
         <div className="mx-auto max-w-[1500px]">
           <header className="mb-7 flex items-start justify-between gap-5 pl-14 lg:pl-14">
             <div>
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-400">Security Dashboard</p>
-              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Dashboard</h1>
-              <p className="mt-2 text-sm text-slate-400 sm:text-base">Scan and analyze Wi-Fi networks around you.</p>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-400">
+                Security Dashboard
+              </p>
+              <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                Dashboard
+              </h1>
+              <p className="mt-2 text-sm text-slate-400 sm:text-base">
+                Scan and analyze Wi-Fi networks around you.
+              </p>
             </div>
           </header>
 
           <section className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5 shadow-xl shadow-black/20 backdrop-blur-xl">
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.1)]"><Icon type="wifi" size={29} /></div>
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.1)]">
+                  <Icon type="wifi" size={29} />
+                </div>
                 <div>
                   <p className="text-sm text-slate-400">Networks Found</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{networks.length || 0}</p>
-                  <p className="mt-1 text-xs text-slate-600">{networks.length ? 'Last scan: Just now' : 'No scan performed'}</p>
+                  <p className="mt-1 text-3xl font-bold text-white">{networks.length}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {networks.length ? 'Last scan: Just now' : 'No scan performed'}
+                  </p>
                 </div>
               </div>
             </div>
 
             <div className="rounded-2xl border border-purple-400/15 bg-slate-950/60 p-5 shadow-xl shadow-black/20 backdrop-blur-xl">
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-purple-400/25 bg-purple-400/10 text-purple-400"><Icon type="shield" size={29} /></div>
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-purple-400/25 bg-purple-400/10 text-purple-400">
+                  <Icon type="shield" size={29} />
+                </div>
                 <div>
-                  <p className="text-sm text-slate-400">Trusted Networks</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{networks.filter((n) => n.security !== 'Open').length}</p>
-                  <p className="mt-1 text-xs text-slate-600">Secure networks</p>
+                  <p className="text-sm text-slate-400">Secured Networks</p>
+                  <p className="mt-1 text-3xl font-bold text-white">{trustedNetworkCount}</p>
+                  <p className="mt-1 text-xs text-slate-600">Networks reporting encryption</p>
                 </div>
               </div>
             </div>
 
             <div className="rounded-2xl border border-pink-400/15 bg-slate-950/60 p-5 shadow-xl shadow-black/20 backdrop-blur-xl">
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-pink-400/25 bg-pink-400/10 text-pink-400"><Icon type="alert" size={29} /></div>
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-pink-400/25 bg-pink-400/10 text-pink-400">
+                  <Icon type="alert" size={29} />
+                </div>
                 <div>
-                  <p className="text-sm text-slate-400">Risks Detected</p>
-                  <p className="mt-1 text-3xl font-bold text-white">{typeof analysisResult?.risk?.risk_score === 'number'
-  ? analysisResult.risk.risk_score.toFixed(1)
-  : '--'}</p>
-                  <p className="mt-1 text-xs text-slate-600">Active threats</p>
+                  <p className="text-sm text-slate-400">Live Risk Score</p>
+                  <p className="mt-1 text-3xl font-bold text-white">{riskScore}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    {riskData.status || 'Waiting for analysis'}
+                  </p>
                 </div>
               </div>
             </div>
@@ -322,17 +448,11 @@ const handleAnalyze = () => {
                   <Icon type="shield" size={25} />
                 </div>
                 <div>
-                  <p className="text-sm text-slate-400">Your Trust Score</p>
-
-<p className="mt-1 text-3xl font-bold text-white">
-  {selectedNetwork
-  ? selectedNetwork.trust_score ??
-    selectedNetwork.trustScore ??
-    analysisResult?.risk?.trust_score ??
-    '--'
-  : '--'}
-</p>
-                  <p className="mt-1 text-xs text-slate-600">Select a network</p>
+                  <p className="text-sm text-slate-400">Live Trust Score</p>
+                  <p className="mt-1 text-3xl font-bold text-white">{trustScore}</p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Connected Wi-Fi assessment
+                  </p>
                 </div>
               </div>
             </div>
@@ -342,8 +462,12 @@ const handleAnalyze = () => {
             <div className="rounded-2xl border border-cyan-400/15 bg-slate-950/60 p-5 shadow-xl shadow-black/20 backdrop-blur-xl sm:p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h2 className="text-xl font-semibold text-cyan-400">Scan for Available Wi-Fi Networks</h2>
-                  <p className="mt-1 text-sm text-slate-500">Scan your surroundings to detect available wireless networks.</p>
+                  <h2 className="text-xl font-semibold text-cyan-400">
+                    Scan for Available Wi-Fi Networks
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Scan your surroundings to detect available wireless networks.
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -368,9 +492,15 @@ const handleAnalyze = () => {
 
               {!scanning && networks.length === 0 && (
                 <div className="mt-6 flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/20 px-5 text-center">
-                  <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-400"><Icon type="wifi" size={38} /></div>
-                  <h3 className="text-lg font-semibold text-slate-300">No networks scanned yet</h3>
-                  <p className="mt-2 max-w-md text-sm text-slate-600">Click Start Scan to discover available Wi-Fi networks around you.</p>
+                  <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/5 text-cyan-400">
+                    <Icon type="wifi" size={38} />
+                  </div>
+                  <h3 className="text-lg font-semibold text-slate-300">
+                    No networks scanned yet
+                  </h3>
+                  <p className="mt-2 max-w-md text-sm text-slate-600">
+                    Click Start Scan to discover available Wi-Fi networks around you.
+                  </p>
                 </div>
               )}
 
@@ -378,92 +508,93 @@ const handleAnalyze = () => {
                 <div className="mt-6 flex min-h-[400px] flex-col items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-400/[0.02]">
                   <div className="relative mb-6">
                     <div className="h-20 w-20 animate-ping rounded-full border border-cyan-400/20" />
-                    <div className="absolute inset-0 flex items-center justify-center text-cyan-400"><Icon type="wifi" size={36} /></div>
+                    <div className="absolute inset-0 flex items-center justify-center text-cyan-400">
+                      <Icon type="wifi" size={36} />
+                    </div>
                   </div>
-                  <p className="text-sm font-medium text-cyan-300">Scanning for available networks...</p>
+                  <p className="text-sm font-medium text-cyan-300">
+                    Scanning for available networks...
+                  </p>
                 </div>
               )}
 
               {!scanning && networks.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  {networks.map((network) => {
-  const signalPercentage = (() => {
-    const percentage = Number(network.signalPercentage);
+                  {networks.map((network, index) => {
+                    const signal = getSignalPercentage(network);
+                    const selected =
+                      getNetworkKey(selectedNetwork) === getNetworkKey(network);
 
-    // Use the backend percentage when it is valid.
-    if (
-      network.signalPercentage !== null &&
-      network.signalPercentage !== undefined &&
-      network.signalPercentage !== '' &&
-      Number.isFinite(percentage) &&
-      percentage >= 0 &&
-      percentage <= 100
-    ) {
-      return percentage;
-    }
-
-    // Otherwise, convert a negative dBm signal reading.
-    const signalDbm = Number(network.signal);
-
-    if (
-      network.signal !== null &&
-      network.signal !== undefined &&
-      network.signal !== '' &&
-      Number.isFinite(signalDbm) &&
-      signalDbm >= -100 &&
-      signalDbm < 0
-    ) {
-      return Math.round(
-        Math.max(0, Math.min(100, 2 * (signalDbm + 100)))
-      );
-    }
-
-    return null;
-  })();
-
-  const selected =
-  selectedNetwork != null &&
-  (selectedNetwork.ssid || selectedNetwork.name || selectedNetwork.network_name) ===
-    (network.ssid || network.name || network.network_name);                 return (
-                      <div key={network.ssid || network.name || network.network_name} className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${selected ? 'border-cyan-400/70 bg-cyan-400/[0.06]' : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'}`}>
+                    return (
+                      <div
+                        key={getNetworkKey(network) || index}
+                        className={`grid grid-cols-1 gap-4 rounded-xl border p-4 transition md:grid-cols-[1.7fr_0.8fr_0.6fr_0.4fr_0.4fr] md:items-center ${
+                          selected
+                            ? 'border-cyan-400/70 bg-cyan-400/[0.06]'
+                            : 'border-transparent bg-slate-900/40 hover:border-slate-700 hover:bg-slate-900/60'
+                        }`}
+                      >
                         <div className="flex items-center gap-3">
-                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-cyan-400/15 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}><Icon type="wifi" size={19} /></div>
+                          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${selected ? 'bg-cyan-400/15 text-cyan-400' : 'bg-slate-800 text-slate-500'}`}>
+                            <Icon type="wifi" size={19} />
+                          </div>
                           <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-white">{network.name}</p>
-                            <p className="mt-0.5 text-xs text-slate-500">{network.type}</p>
+                            <p className="truncate text-sm font-semibold text-white">
+                              {network.name || network.ssid || network.network_name || 'Hidden network'}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {network.type || 'Wi-Fi'}
+                            </p>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-3">
                           <div className="flex items-end gap-[3px]">
                             {[1, 2, 3, 4].map((bar) => {
-                              const active = network.signalPercentage >= bar * 25;
-                              return <span key={bar} className={`w-[4px] rounded-sm ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'} ${active ? getSignalBarColor(network.signalPercentage) : 'bg-slate-800'}`} />;
+                              const active = signal != null && signal >= bar * 25;
+                              return (
+                                <span
+                                  key={bar}
+                                  className={`w-[4px] rounded-sm ${
+                                    bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'
+                                  } ${active ? getSignalBarColor(signal) : 'bg-slate-800'}`}
+                                />
+                              );
                             })}
                           </div>
                           <div>
-                            
-<p className={`text-sm font-semibold ${getSignalTextColor(network.signalPercentage)}`}>
-  {network.signalPercentage}%
-</p>
-<p className="text-[10px] text-slate-600">
-  {getSignalLabel(network.signalPercentage)}
-</p>
-
+                            <p className={`text-sm font-semibold ${getSignalTextColor(signal)}`}>
+                              {signal == null ? '--' : `${signal}%`}
+                            </p>
+                            <p className="text-[10px] text-slate-600">
+                              {getSignalLabel(signal)}
+                            </p>
                           </div>
                         </div>
 
                         <div>
-                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-[11px] font-medium ${network.security === 'Open' ? 'border-cyan-400/30 bg-cyan-400/5 text-cyan-300' : 'border-blue-500/30 bg-blue-500/5 text-blue-300'}`}>{network.security}</span>
+                          <span className={`inline-flex rounded-lg border px-2.5 py-1 text-[11px] font-medium ${
+                            String(network.security || '').toLowerCase() === 'open'
+                              ? 'border-pink-400/30 bg-pink-400/5 text-pink-300'
+                              : 'border-blue-500/30 bg-blue-500/5 text-blue-300'
+                          }`}>
+                            {network.security || 'Unknown'}
+                          </span>
                         </div>
 
-                        <div className="hidden text-sm text-slate-300 md:block">{network.channel}</div>
+                        <div className="hidden text-sm text-slate-300 md:block">
+                          {network.channel ?? '--'}
+                        </div>
 
                         <div>
                           <button
                             type="button"
                             onClick={() => handleSelectNetwork(network)}
-                            className={`w-full rounded-lg px-4 py-2 text-xs font-semibold transition ${selected ? 'bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white' : 'border border-cyan-400/30 bg-cyan-400/5 text-cyan-300 hover:bg-cyan-400/10'}`}
+                            className={`w-full rounded-lg px-4 py-2 text-xs font-semibold transition ${
+                              selected
+                                ? 'bg-gradient-to-r from-cyan-500 to-fuchsia-500 text-white'
+                                : 'border border-cyan-400/30 bg-cyan-400/5 text-cyan-300 hover:bg-cyan-400/10'
+                            }`}
                           >
                             {selected ? 'Selected' : 'Select'}
                           </button>
@@ -477,18 +608,38 @@ const handleAnalyze = () => {
 
             <div className="space-y-5">
               <div className="rounded-2xl border border-purple-400/20 bg-slate-950/60 p-6 shadow-xl shadow-black/20 backdrop-blur-xl">
-                <h2 className="mb-6 text-lg font-semibold text-cyan-400">Selected Network</h2>
+                <h2 className="mb-6 text-lg font-semibold text-cyan-400">
+                  Selected Network
+                </h2>
 
                 {selectedNetwork ? (
                   <>
                     <div className="flex items-center gap-4">
-                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.12)]"><Icon type="wifi" size={36} /></div>
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-400/10 text-cyan-400 shadow-[0_0_25px_rgba(34,211,238,0.12)]">
+                        <Icon type="wifi" size={36} />
+                      </div>
                       <div className="min-w-0">
-                        <h3 className="truncate text-xl font-bold text-white">{selectedNetwork.name}</h3>
-                        <p className="mt-1 text-sm text-slate-500">{selectedNetwork.security} Network <span className="mx-2">•</span> Ch. {selectedNetwork.channel}</p>
-                        <p className="mt-2 text-sm font-medium text-cyan-400">Signal: {selectedNetwork.signal}% ({getSignalLabel(selectedNetwork.signal)})</p>
+                        <h3 className="truncate text-xl font-bold text-white">
+                          {selectedNetwork.name || selectedNetwork.ssid || selectedNetwork.network_name || 'Hidden network'}
+                        </h3>
+                        <p className="mt-1 text-sm text-slate-500">
+                          {selectedNetwork.security || 'Security unknown'} Network
+                          <span className="mx-2">•</span>
+                          Ch. {selectedNetwork.channel ?? '--'}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-cyan-400">
+                          Signal: {getSignalPercentage(selectedNetwork) == null
+                            ? '--'
+                            : `${getSignalPercentage(selectedNetwork)}%`}
+                        </p>
                       </div>
                     </div>
+
+                    <p className="mt-5 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3 text-xs leading-relaxed text-amber-200/80">
+                      The live risk and trust scores above refer to traffic and
+                      security evidence for the connected Wi-Fi network. Selecting
+                      a scanned network does not recalculate those scores.
+                    </p>
 
                     <button
                       type="button"
@@ -501,14 +652,36 @@ const handleAnalyze = () => {
                   </>
                 ) : (
                   <div className="flex min-h-[230px] flex-col items-center justify-center text-center">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-600"><Icon type="wifi" size={28} /></div>
-                    <p className="text-sm font-medium text-slate-400">No network selected</p>
-                    <p className="mt-1 text-xs text-slate-600">Choose a network from the scan list to view options.</p>
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-600">
+                      <Icon type="wifi" size={28} />
+                    </div>
+                    <p className="text-sm font-medium text-slate-400">
+                      No network selected
+                    </p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Choose a network from the scan list to view options.
+                    </p>
                   </div>
                 )}
               </div>
 
-              
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-slate-400">Live packet stream</p>
+                  <span className={`rounded-full px-2.5 py-1 text-xs ${
+                    streamStatus === 'connected'
+                      ? 'bg-emerald-400/10 text-emerald-300'
+                      : streamStatus === 'error'
+                        ? 'bg-pink-400/10 text-pink-300'
+                        : 'bg-yellow-400/10 text-yellow-300'
+                  }`}>
+                    {streamStatus}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-600">
+                  Risk updates are received from the connected-network monitoring pipeline.
+                </p>
+              </div>
             </div>
           </section>
         </div>
