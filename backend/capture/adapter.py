@@ -323,6 +323,9 @@ def normalize_packet(packet_dict):
         "tcp_syn": tcp_syn,
         "tcp_rst": tcp_rst,
         "tcp_retransmission": tcp_retransmission,
+        "tcp_retransmission_field_available": (
+        tcp_retransmission is not None
+        ),
         "udp_destination_port": udp_dstport,
 
         # Layer presence indicators

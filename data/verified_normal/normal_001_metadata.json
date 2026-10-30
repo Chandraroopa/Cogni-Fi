@@ -1,0 +1,62 @@
+{
+  "pcap": "data\\verified_normal\\normal_001.pcapng",
+  "window_seconds": 1.0,
+  "windows_exported": 299,
+  "model_feature_count": 30,
+  "model_features": [
+    "packet_count",
+    "byte_count",
+    "packets_per_second",
+    "bytes_per_second",
+    "packet_size_mean",
+    "packet_size_std",
+    "iat_mean",
+    "iat_std",
+    "retry_rate",
+    "protected_rate",
+    "beacon_rate",
+    "deauth_rate",
+    "disassoc_rate",
+    "probe_response_rate",
+    "signal_mean",
+    "signal_std",
+    "data_rate_mean",
+    "data_rate_std",
+    "unique_bssid_count",
+    "unique_source_count",
+    "unique_destination_count",
+    "dns_request_count",
+    "dns_response_count",
+    "dns_latency_mean",
+    "dns_latency_std",
+    "syn_rate",
+    "rst_rate",
+    "retransmission_rate",
+    "udp_packet_rate",
+    "unique_udp_destination_ports"
+  ],
+  "wifi_availability_flags": [
+    "wifi_retry_available",
+    "wifi_protected_available",
+    "wifi_management_frames_available",
+    "wifi_signal_available",
+    "wifi_data_rate_available",
+    "wifi_bssid_available"
+  ],
+  "network_availability_flags": [
+    "tcp_rst_available",
+    "tcp_retransmission_available",
+    "dns_latency_available"
+  ],
+  "traffic_label": "candidate_normal_unverified",
+  "capture_link_type": "Ethernet",
+  "wifi_radio_measurements_available_from_pcap": false,
+  "wifi_association_limitation": "The capture uses Ethernet link-layer data. Windows Wi-Fi association details do not establish that captured packets belong to that Wi-Fi network. This PCAP cannot verify SSID/BSSID association or provide 802.11 radio, retry, deauthentication, or disassociation measurements.",
+  "note": "Unavailable measurements must not be interpreted as measured zeroes.",
+  "tcp_retransmission": {
+    "observable": false,
+    "known_packet_results": 424,
+    "detected_packets": 424,
+    "limitation": "Only explicit retransmission expert markers are known; absence of a marker is not evidence of a non-retransmission."
+  }
+}
