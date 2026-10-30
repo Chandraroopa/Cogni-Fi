@@ -1,0 +1,47 @@
+{
+  "traffic_label": "candidate_normal_unverified",
+  "verified_normal": false,
+  "usable_as_production_baseline": false,
+  "window_count": 300,
+  "link_type": "Ethernet",
+  "source_csv": "normal_001_features.csv",
+  "behavioral_statistics": {
+    "retry_rate": {
+      "available_windows": 0,
+      "valid_windows": 0,
+      "p95": null,
+      "p99": null
+    },
+    "deauth_rate": {
+      "available_windows": 0,
+      "valid_windows": 0,
+      "p95": null,
+      "p99": null
+    },
+    "disassoc_rate": {
+      "available_windows": 0,
+      "valid_windows": 0,
+      "p95": null,
+      "p99": null
+    },
+    "dns_latency_mean": {
+      "available_windows": 146,
+      "valid_windows": 146,
+      "p95": 1.038295746,
+      "p99": 3.176176771
+    },
+    "retransmission_rate": {
+      "available_windows": 0,
+      "valid_windows": 0,
+      "p95": null,
+      "p99": null
+    },
+    "rst_rate": {
+      "available_windows": 285,
+      "valid_windows": 285,
+      "p95": 2.0,
+      "p99": 3.32
+    }
+  },
+  "warning": "Candidate reference statistics only; NOT a calibrated normal baseline."
+}
