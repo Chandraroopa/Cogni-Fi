@@ -35,6 +35,8 @@ function NetworkAnalysis() {
   const [savingHistory, setSavingHistory] = useState(false);
   const [historyMessage, setHistoryMessage] = useState('');
   const [historySaved, setHistorySaved] = useState(false);
+  const [savedScanId, setSavedScanId] = useState(null);
+  const [alertSavePending, setAlertSavePending] = useState(false);
 
   const analysisResult = location.state?.analysisResult;
   const risk = analysisResult?.risk ?? null;
@@ -57,9 +59,34 @@ function NetworkAnalysis() {
     network?.security ||
     'Unknown';
 
-  // Save an explicitly requested snapshot, not every live WebSocket window.
-  // A selected scan-list SSID is NOT proven to be the source of the captured
-  // connected-interface traffic; never attribute live risk to that SSID.
+  // An alert is saved only when the Risk Engine actually generated one.
+  // The source capture is not proven to belong to the selected scan-list SSID.
+  const insertRiskAlert = async (userId, scanId) => {
+    const alert = risk?.alert;
+    if (!alert || !['Risky', 'Suspicious'].includes(risk?.status)) return false;
+    const num = (v) => typeof v === 'number' && Number.isFinite(v) ? v : null;
+    const alertRow = {
+      user_id: userId,
+      scan_id: scanId,
+      severity: alert.severity === 'high' ? 'high' : 'medium',
+      title: typeof alert.title === 'string' && alert.title.trim()
+        ? alert.title : 'Security warning',
+      risk_score: num(alert.risk_score),
+      trust_score: num(alert.trust_score),
+      attack_type: typeof alert.attack_type === 'string' ? alert.attack_type : null,
+      confidence: num(alert.confidence),
+      reasons: Array.isArray(alert.reasons) ? alert.reasons : [],
+      assessment: typeof alert.assessment === 'string' ? alert.assessment :
+        (risk.assessment || 'partial'),
+      provisional: typeof alert.provisional === 'boolean' ? alert.provisional :
+        risk.assessment !== 'full',
+      is_read: false,
+    };
+    const { error } = await supabase.from('alerts').insert(alertRow);
+    if (error) throw error;
+    return true;
+  };
+
   const saveAssessment = async () => {
     if (savingHistory || historySaved) return;
     setHistoryMessage('');
@@ -68,39 +95,67 @@ function NetworkAnalysis() {
       return;
     }
     if (!risk || !['Safe', 'Unverified', 'Suspicious', 'Risky', 'Unknown'].includes(risk.status)) {
-      setHistoryMessage('No complete backend assessment is available to save yet.');
+      setHistoryMessage('No backend assessment is available to save yet.');
       return;
     }
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData?.user || authData.user.id !== user.id) {
-      setHistoryMessage('Your session has expired. Please sign in again.');
-      return;
-    }
-    const num = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
-    const attack = risk.attack ?? {};
-    const record = {
-      user_id: authData.user.id,
-      network_name: null, // No verified SSID-to-capture binding is available.
-      security_type: null,
-      risk_score: num(risk.risk_score),
-      trust_score: num(risk.trust_score),
-      status: risk.status,
-      assessment: risk.assessment || 'partial',
-      attack_type: typeof attack.type === 'string' ? attack.type : null,
-      attack_confidence: num(attack.confidence),
-      factors: risk.factors && typeof risk.factors === 'object' ? risk.factors : {},
-      reasons: Array.isArray(risk.reasons) ? risk.reasons : [],
-      recommendations: Array.isArray(risk.recommendations) ? risk.recommendations : [],
-    };
     setSavingHistory(true);
     try {
-      const { error } = await supabase.from('scan_history').insert(record);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user || authData.user.id !== user.id) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+      const num = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+      const attack = risk.attack ?? {};
+      const record = {
+        user_id: authData.user.id,
+        network_name: null,
+        security_type: null,
+        risk_score: num(risk.risk_score),
+        trust_score: num(risk.trust_score),
+        status: risk.status,
+        assessment: risk.assessment || 'partial',
+        attack_type: typeof attack.type === 'string' ? attack.type : null,
+        attack_confidence: num(attack.confidence),
+        factors: risk.factors && typeof risk.factors === 'object' ? risk.factors : {},
+        reasons: Array.isArray(risk.reasons) ? risk.reasons : [],
+        recommendations: Array.isArray(risk.recommendations) ? risk.recommendations : [],
+      };
+      const { data, error } = await supabase.from('scan_history')
+        .insert(record).select('id').single();
       if (error) throw error;
+      setSavedScanId(data.id);
       setHistorySaved(true);
-      setHistoryMessage('Assessment saved. Open History to see it. Network association was not verified.');
+      if (risk.alert && ['Risky', 'Suspicious'].includes(risk.status)) {
+        try {
+          await insertRiskAlert(authData.user.id, data.id);
+          setHistoryMessage('Assessment and security alert saved. View them in History and Alerts.');
+        } catch (alertError) {
+          console.error('Alert save failed:', alertError);
+          setAlertSavePending(true);
+          setHistoryMessage(`History saved, but alert saving failed: ${alertError.message}. Retry saving the alert.`);
+        }
+      } else {
+        setHistoryMessage('Assessment saved. No alert was generated for this result.');
+      }
     } catch (error) {
       console.error('History save failed:', error);
       setHistoryMessage(`Could not save history: ${error.message || 'Unknown error'}`);
+    } finally {
+      setSavingHistory(false);
+    }
+  };
+
+  const retryAlertSave = async () => {
+    if (!alertSavePending || !savedScanId || savingHistory || !user?.id) return;
+    setSavingHistory(true);
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || data?.user?.id !== user.id) throw new Error('Please sign in again.');
+      await insertRiskAlert(user.id, savedScanId);
+      setAlertSavePending(false);
+      setHistoryMessage('Security alert saved successfully.');
+    } catch (error) {
+      setHistoryMessage(`Alert could not be saved: ${error.message}`);
     } finally {
       setSavingHistory(false);
     }
@@ -526,6 +581,11 @@ function NetworkAnalysis() {
               {savingHistory ? 'Saving...' : historySaved ? 'Saved to History' : 'Save assessment to History'}
             </button>
             {historyMessage && <p role="status" className="max-w-xs text-xs text-slate-300">{historyMessage}</p>}
+            {alertSavePending && (
+              <button type="button" disabled={savingHistory} onClick={retryAlertSave} className="text-sm text-amber-300 underline">
+                Retry saving alert
+              </button>
+            )}
             {historySaved && (
               <button type="button" onClick={() => navigate('/history')} className="text-sm text-cyan-300 underline">
                 View History
