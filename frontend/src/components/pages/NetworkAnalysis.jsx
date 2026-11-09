@@ -1,5 +1,7 @@
-﻿
+
 import api from '../../services/api';
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -29,6 +31,10 @@ ChartJS.register(
 function NetworkAnalysis() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [savingHistory, setSavingHistory] = useState(false);
+  const [historyMessage, setHistoryMessage] = useState('');
+  const [historySaved, setHistorySaved] = useState(false);
 
   const analysisResult = location.state?.analysisResult;
   const risk = analysisResult?.risk ?? null;
@@ -50,6 +56,55 @@ function NetworkAnalysis() {
     network?.encryption ||
     network?.security ||
     'Unknown';
+
+  // Save an explicitly requested snapshot, not every live WebSocket window.
+  // A selected scan-list SSID is NOT proven to be the source of the captured
+  // connected-interface traffic; never attribute live risk to that SSID.
+  const saveAssessment = async () => {
+    if (savingHistory || historySaved) return;
+    setHistoryMessage('');
+    if (!user?.id) {
+      setHistoryMessage('Please sign in before saving history.');
+      return;
+    }
+    if (!risk || !['Safe', 'Unverified', 'Suspicious', 'Risky', 'Unknown'].includes(risk.status)) {
+      setHistoryMessage('No complete backend assessment is available to save yet.');
+      return;
+    }
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData?.user || authData.user.id !== user.id) {
+      setHistoryMessage('Your session has expired. Please sign in again.');
+      return;
+    }
+    const num = (value) => typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const attack = risk.attack ?? {};
+    const record = {
+      user_id: authData.user.id,
+      network_name: null, // No verified SSID-to-capture binding is available.
+      security_type: null,
+      risk_score: num(risk.risk_score),
+      trust_score: num(risk.trust_score),
+      status: risk.status,
+      assessment: risk.assessment || 'partial',
+      attack_type: typeof attack.type === 'string' ? attack.type : null,
+      attack_confidence: num(attack.confidence),
+      factors: risk.factors && typeof risk.factors === 'object' ? risk.factors : {},
+      reasons: Array.isArray(risk.reasons) ? risk.reasons : [],
+      recommendations: Array.isArray(risk.recommendations) ? risk.recommendations : [],
+    };
+    setSavingHistory(true);
+    try {
+      const { error } = await supabase.from('scan_history').insert(record);
+      if (error) throw error;
+      setHistorySaved(true);
+      setHistoryMessage('Assessment saved. Open History to see it. Network association was not verified.');
+    } catch (error) {
+      console.error('History save failed:', error);
+      setHistoryMessage(`Could not save history: ${error.message || 'Unknown error'}`);
+    } finally {
+      setSavingHistory(false);
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
@@ -455,12 +510,28 @@ function NetworkAnalysis() {
             </p>
           </div>
 
-          <button
-            onClick={fetchNetworkDetails}
-            className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-400/20"
-          >
-            Retry network details
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={fetchNetworkDetails}
+              className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-400/20"
+            >
+              Retry network details
+            </button>
+            <button
+              type="button"
+              onClick={saveAssessment}
+              disabled={!risk || savingHistory || historySaved}
+              className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {savingHistory ? 'Saving...' : historySaved ? 'Saved to History' : 'Save assessment to History'}
+            </button>
+            {historyMessage && <p role="status" className="max-w-xs text-xs text-slate-300">{historyMessage}</p>}
+            {historySaved && (
+              <button type="button" onClick={() => navigate('/history')} className="text-sm text-cyan-300 underline">
+                View History
+              </button>
+            )}
+          </div>
         </header>
 
         {/* Network Security Status */}

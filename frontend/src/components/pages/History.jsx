@@ -1,4 +1,3 @@
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabaseClient';
@@ -6,6 +5,10 @@ import { useAuth } from '../../context/AuthContext';
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'All statuses' },
+  { value: 'safe', label: 'Safe' },
+  { value: 'unverified', label: 'Unverified' },
+  { value: 'suspicious', label: 'Suspicious' },
+  { value: 'risky', label: 'Risky' },
   { value: 'completed', label: 'Completed' },
   { value: 'in progress', label: 'In Progress' },
   { value: 'failed', label: 'Failed' },
@@ -38,6 +41,7 @@ function getStatus(record) {
     return 'in progress';
   }
 
+  if (['safe', 'unverified', 'suspicious', 'risky'].includes(raw)) return raw;
   if (['failed', 'error'].includes(raw)) return 'failed';
   if (['incomplete', 'partial'].includes(raw)) return 'incomplete';
 
@@ -312,7 +316,7 @@ function History() {
 
   const summary = useMemo(() => {
     const completed = records.filter(
-      (record) => getStatus(record) === 'completed'
+      (record) => ['completed', 'safe', 'unverified', 'suspicious', 'risky'].includes(getStatus(record))
     ).length;
 
     const threats = records.filter(
